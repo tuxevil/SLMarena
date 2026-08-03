@@ -1,8 +1,8 @@
-CREATE TABLE IF NOT EXISTS prompt_templates (
+CREATE TABLE IF NOT EXISTS scenarios (
   id UUID PRIMARY KEY,
-  title VARCHAR(255) NOT NULL,
+  name VARCHAR(255) NOT NULL,
   system_prompt TEXT NOT NULL,
-  tags TEXT[] NOT NULL DEFAULT '{}',
+  user_messages JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -19,22 +19,13 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS parameters_json JSONB;
 
-CREATE TABLE IF NOT EXISTS test_suites (
-  id UUID PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  description TEXT,
-  system_prompt_id UUID REFERENCES prompt_templates(id) ON DELETE SET NULL,
-  user_messages JSONB NOT NULL,
-  tags TEXT[] NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS test_runs (
   id UUID PRIMARY KEY,
   status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
   paused BOOLEAN NOT NULL DEFAULT FALSE,
   control_version BIGINT NOT NULL DEFAULT 0,
+  scenario_id UUID,
+  samples_per_model SMALLINT NOT NULL DEFAULT 1,
   system_prompt TEXT NOT NULL,
   ollama_url TEXT NOT NULL,
   user_messages JSONB NOT NULL,
@@ -51,11 +42,14 @@ ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS ollama_url TEXT NOT NULL DEFAULT 
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS evaluator_config JSONB;
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS paused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS control_version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS scenario_id UUID;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS samples_per_model SMALLINT NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS model_results (
   id UUID PRIMARY KEY,
   test_run_id UUID NOT NULL REFERENCES test_runs(id) ON DELETE CASCADE,
   model_name VARCHAR(255) NOT NULL,
+  sample_index INTEGER NOT NULL DEFAULT 0,
   status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
   eval_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
   response_text TEXT,
@@ -68,8 +62,11 @@ CREATE TABLE IF NOT EXISTS model_results (
   human_status VARCHAR(32) NOT NULL DEFAULT 'UNREVIEWED',
   human_notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (test_run_id, model_name)
+  UNIQUE (test_run_id, model_name, sample_index)
 );
+
+ALTER TABLE model_results DROP CONSTRAINT IF EXISTS model_results_test_run_id_model_name_key;
+ALTER TABLE model_results ADD COLUMN IF NOT EXISTS sample_index INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS model_result_turns (
   id UUID PRIMARY KEY,

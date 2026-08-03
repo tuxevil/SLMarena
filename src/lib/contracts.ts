@@ -22,6 +22,8 @@ export const evaluatorConfigSchema = z.object({
 
 export const createRunSchema = z.object({
   ollamaUrl: httpUrlSchema,
+  scenarioId: z.string().uuid().nullable().optional(),
+  samplesPerModel: z.number().int().min(1).max(10).default(1),
   systemPrompt: z.string().trim().min(1).max(50_000),
   userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
   models: z
@@ -56,7 +58,7 @@ export const settingsUpdateSchema = z.object({
 
 export type BenchmarkParameters = z.infer<typeof benchmarkParametersSchema>;
 export type EvaluatorConfig = z.infer<typeof evaluatorConfigSchema>;
-export type CreateRunInput = z.infer<typeof createRunSchema>;
+export type CreateRunInput = z.input<typeof createRunSchema>;
 export type SettingsUpdateInput = z.infer<typeof settingsUpdateSchema>;
 
 export type RunStatus = "PENDING" | "RUNNING" | "COMPLETED" | "CANCELLED" | "FAILED";
@@ -96,6 +98,7 @@ export type Evaluation = {
 export type ModelResult = Telemetry & {
   id: string;
   modelName: string;
+  sampleIndex: number;
   status: ModelStatus;
   evalStatus: EvaluationStatus;
   responseText: string | null;
@@ -111,6 +114,8 @@ export type TestRun = {
   status: RunStatus;
   paused: boolean;
   controlVersion: number;
+  scenarioId: string | null;
+  samplesPerModel: number;
   systemPrompt: string;
   userMessages: string[];
   models: string[];
@@ -131,25 +136,22 @@ export type AppSettings = {
   parameters: BenchmarkParameters;
 };
 
-export type PromptTemplate = {
+export type Scenario = {
   id: string;
-  title: string;
+  name: string;
   systemPrompt: string;
-  tags: string[];
+  userMessages: string[];
   createdAt: string;
   updatedAt: string;
 };
 
-export type TestSuite = {
-  id: string;
-  name: string;
-  description: string;
-  promptTemplateId: string | null;
-  userMessages: string[];
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-};
+export const scenarioSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  systemPrompt: z.string().trim().min(1).max(50_000),
+  userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
+});
+
+export type ScenarioInput = z.infer<typeof scenarioSchema>;
 
 export type RunEvent = {
   id: number;

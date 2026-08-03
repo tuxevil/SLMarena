@@ -1,24 +1,22 @@
 import postgres, { type TransactionSql } from "postgres";
+import { createHash } from "node:crypto";
 import type {
   EvaluatorConfig,
   AppSettings,
   ModelResult,
-  PromptTemplate,
+  Scenario,
   TestRun,
-  TestSuite,
   TurnResult,
 } from "@/lib/contracts";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 import {
-  sqliteDeletePrompt,
-  sqliteDeleteSuite,
+  sqliteDeleteScenario,
   sqliteLoadSettings,
   sqliteLoadState,
   sqlitePersistHumanReview,
-  sqlitePersistPrompt,
   sqlitePersistRun,
+  sqlitePersistScenario,
   sqlitePersistSettings,
-  sqlitePersistSuite,
 } from "@/lib/sqlite-db";
 
 export type RunPersistenceConfig = {
@@ -37,8 +35,27 @@ type PersistedRun = {
 
 export type DatabaseState = {
   runs: PersistedRun[];
-  prompts: PromptTemplate[];
-  suites: TestSuite[];
+  scenarios: Scenario[];
+};
+
+export type ModelAggregate = {
+  modelName: string;
+  samples: number;
+  evaluatedSamples: number;
+  failures: number;
+  distribution: Record<number, number>;
+  averageStars: number | null;
+  averageTtftMs: number | null;
+  averageOutputTokens: number | null;
+  averageTokPerSec: number | null;
+  averageTotalDurationMs: number | null;
+};
+
+export type ScenarioAnalysis = {
+  scenarioKey: string;
+  runs: number;
+  models: ModelAggregate[];
+  bestModel: { modelName: string; averageStars: number } | null;
 };
 
 type SqlClient = ReturnType<typeof postgres>;
@@ -52,6 +69,77 @@ export function isPostgres() {
 
 export function hasDatabase() {
   return true;
+}
+
+export function scenarioKeyFor(input: { scenarioId: string | null; systemPrompt: string; userMessages: string[] }) {
+  if (input.scenarioId) return `scenario:${input.scenarioId}`;
+  return contentKey(input.systemPrompt, input.userMessages);
+}
+
+function contentKey(systemPrompt: string, userMessages: string[]) {
+  return `content:${createHash("sha256").update(`${systemPrompt}\u0000${JSON.stringify(userMessages)}`).digest("hex")}`;
+}
+
+export async function aggregateScenarioAnalysis(input: {
+  scenarioId: string | null;
+  systemPrompt: string;
+  userMessages: string[];
+}): Promise<ScenarioAnalysis> {
+  const state = await loadPersistedState();
+  if (!state) return { scenarioKey: "", runs: 0, models: [], bestModel: null };
+
+  const key = scenarioKeyFor(input);
+  const runs = state.runs.filter((entry) => scenarioKeyFor(entry.run) === key);
+
+  const byModel = new Map<string, { stars: number[]; ttft: number[]; output: number[]; tokPerSec: number[]; total: number[]; failures: number }>();
+  for (const entry of runs) {
+    for (const result of entry.run.results) {
+      const bucket = byModel.get(result.modelName) ?? { stars: [], ttft: [], output: [], tokPerSec: [], total: [], failures: 0 };
+      if (result.status === "FAILED" || result.status === "CANCELLED") bucket.failures += 1;
+      if (result.evaluation?.scoreStars != null) bucket.stars.push(result.evaluation.scoreStars);
+      if (result.ttftMs != null) bucket.ttft.push(result.ttftMs);
+      if (result.outputTokens != null) bucket.output.push(result.outputTokens);
+      if (result.tokPerSec != null) bucket.tokPerSec.push(result.tokPerSec);
+      if (result.totalDurationMs != null) bucket.total.push(result.totalDurationMs);
+      byModel.set(result.modelName, bucket);
+    }
+  }
+
+  const models: ModelAggregate[] = [...byModel.entries()].map(([modelName, bucket]) => {
+    const distribution: Record<number, number> = {};
+    for (const star of bucket.stars) distribution[star] = (distribution[star] ?? 0) + 1;
+    return {
+      modelName,
+      samples: bucket.stars.length + bucket.failures,
+      evaluatedSamples: bucket.stars.length,
+      failures: bucket.failures,
+      distribution,
+      averageStars: average(bucket.stars),
+      averageTtftMs: average(bucket.ttft),
+      averageOutputTokens: average(bucket.output),
+      averageTokPerSec: average(bucket.tokPerSec),
+      averageTotalDurationMs: average(bucket.total),
+    };
+  });
+
+  models.sort((a, b) => {
+    const byStars = (b.averageStars ?? 0) - (a.averageStars ?? 0);
+    if (byStars !== 0) return byStars;
+    return (b.evaluatedSamples + b.failures) - (a.evaluatedSamples + a.failures);
+  });
+
+  const ranked = models.filter((model) => model.averageStars !== null);
+  return {
+    scenarioKey: key,
+    runs: runs.length,
+    models,
+    bestModel: ranked.length > 0 ? { modelName: ranked[0].modelName, averageStars: ranked[0].averageStars! } : null,
+  };
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return null;
+  return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
 }
 
 export function queuePersistedRun(run: TestRun, eventType: string, config: RunPersistenceConfig) {
@@ -71,54 +159,28 @@ export async function waitForPersistedRun(id: string) {
   await persistenceChains.get(id);
 }
 
-export async function persistPrompt(prompt: PromptTemplate) {
+export async function persistScenario(scenario: Scenario) {
   if (!isPostgres()) {
-    sqlitePersistPrompt(prompt);
+    sqlitePersistScenario(scenario);
     return;
   }
   await getClient()!`
-    INSERT INTO prompt_templates (id, title, system_prompt, tags, created_at, updated_at)
-    VALUES (${prompt.id}, ${prompt.title}, ${prompt.systemPrompt}, ${prompt.tags}, ${new Date(prompt.createdAt)}, ${new Date(prompt.updatedAt)})
-    ON CONFLICT (id) DO UPDATE SET
-      title = EXCLUDED.title,
-      system_prompt = EXCLUDED.system_prompt,
-      tags = EXCLUDED.tags,
-      updated_at = EXCLUDED.updated_at
-  `;
-}
-
-export async function deletePersistedPrompt(id: string) {
-  if (!isPostgres()) {
-    sqliteDeletePrompt(id);
-    return;
-  }
-  await getClient()!`DELETE FROM prompt_templates WHERE id = ${id}`;
-}
-
-export async function persistSuite(suite: TestSuite) {
-  if (!isPostgres()) {
-    sqlitePersistSuite(suite);
-    return;
-  }
-  await getClient()!`
-    INSERT INTO test_suites (id, name, description, system_prompt_id, user_messages, tags, created_at, updated_at)
-    VALUES (${suite.id}, ${suite.name}, ${suite.description}, ${suite.promptTemplateId}, ${JSON.stringify(suite.userMessages)}::jsonb, ${suite.tags}, ${new Date(suite.createdAt)}, ${new Date(suite.updatedAt)})
+    INSERT INTO scenarios (id, name, system_prompt, user_messages, created_at, updated_at)
+    VALUES (${scenario.id}, ${scenario.name}, ${scenario.systemPrompt}, ${JSON.stringify(scenario.userMessages)}::jsonb, ${new Date(scenario.createdAt)}, ${new Date(scenario.updatedAt)})
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
-      description = EXCLUDED.description,
-      system_prompt_id = EXCLUDED.system_prompt_id,
+      system_prompt = EXCLUDED.system_prompt,
       user_messages = EXCLUDED.user_messages,
-      tags = EXCLUDED.tags,
       updated_at = EXCLUDED.updated_at
   `;
 }
 
-export async function deletePersistedSuite(id: string) {
+export async function deletePersistedScenario(id: string) {
   if (!isPostgres()) {
-    sqliteDeleteSuite(id);
+    sqliteDeleteScenario(id);
     return;
   }
-  await getClient()!`DELETE FROM test_suites WHERE id = ${id}`;
+  await getClient()!`DELETE FROM scenarios WHERE id = ${id}`;
 }
 
 export async function persistHumanReview(resultId: string, status: string, notes: string) {
@@ -214,21 +276,20 @@ export async function loadPersistedState(runId?: string): Promise<DatabaseState 
   const emptyRows = Promise.resolve([] as Array<Record<string, unknown>>);
 
   try {
-    const [runRows, resultRows, turnRows, evaluationRows, promptRows, suiteRows] = await sql.begin(async (transaction) => Promise.all([
+    const [runRows, resultRows, turnRows, evaluationRows, scenarioRows] = await sql.begin(async (transaction) => Promise.all([
       runId
-        ? transaction`SELECT id, status, paused, control_version, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
-        : transaction`SELECT id, status, paused, control_version, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
+        ? transaction`SELECT id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
+        : transaction`SELECT id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
       runId
-        ? transaction`SELECT id, test_run_id, model_name, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results WHERE test_run_id = ${runId}`
-        : transaction`SELECT id, test_run_id, model_name, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results`,
+        ? transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results WHERE test_run_id = ${runId}`
+        : transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results`,
       runId
         ? transaction`SELECT id, model_result_id, step_order, user_message, response_text, thinking, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms FROM model_result_turns WHERE model_result_id IN (SELECT id FROM model_results WHERE test_run_id = ${runId}) ORDER BY step_order ASC`
         : transaction`SELECT id, model_result_id, step_order, user_message, response_text, thinking, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms FROM model_result_turns ORDER BY step_order ASC`,
       runId
         ? transaction`SELECT model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, evaluator_raw_json FROM evaluations WHERE model_result_id IN (SELECT id FROM model_results WHERE test_run_id = ${runId})`
         : transaction`SELECT model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, evaluator_raw_json FROM evaluations`,
-      runId ? emptyRows : transaction`SELECT id, title, system_prompt, tags, created_at, updated_at FROM prompt_templates ORDER BY updated_at DESC`,
-      runId ? emptyRows : transaction`SELECT id, name, description, system_prompt_id, user_messages, tags, created_at, updated_at FROM test_suites ORDER BY updated_at DESC`,
+      runId ? emptyRows : transaction`SELECT id, name, system_prompt, user_messages, created_at, updated_at FROM scenarios ORDER BY updated_at DESC`,
     ]));
 
     const turnsByResult = groupTurns(turnRows);
@@ -244,8 +305,7 @@ export async function loadPersistedState(runId?: string): Promise<DatabaseState 
 
     return {
       runs: runRows.map((row) => restoreRun(row, resultsByRun.get(String(row.id)) ?? [])),
-      prompts: promptRows.map(restorePrompt),
-      suites: suiteRows.map(restoreSuite),
+      scenarios: scenarioRows.map(restoreScenario),
     };
   } catch (error) {
     reportPersistenceError(error);
@@ -350,12 +410,14 @@ async function persistRun(run: TestRun, config: RunPersistenceConfig) {
 
   await sql.begin(async (transaction) => {
     await transaction`
-      INSERT INTO test_runs (id, status, paused, control_version, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
-      VALUES (${run.id}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.systemPrompt}, ${config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
+      INSERT INTO test_runs (id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
+      VALUES (${run.id}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.scenarioId}, ${run.samplesPerModel}, ${run.systemPrompt}, ${config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
       ON CONFLICT (id) DO UPDATE SET
         status = CASE WHEN EXCLUDED.control_version >= test_runs.control_version THEN EXCLUDED.status ELSE test_runs.status END,
         paused = CASE WHEN EXCLUDED.control_version >= test_runs.control_version THEN EXCLUDED.paused ELSE test_runs.paused END,
         control_version = GREATEST(test_runs.control_version, EXCLUDED.control_version),
+        scenario_id = EXCLUDED.scenario_id,
+        samples_per_model = EXCLUDED.samples_per_model,
         system_prompt = EXCLUDED.system_prompt,
         ollama_url = EXCLUDED.ollama_url,
         user_messages = EXCLUDED.user_messages,
@@ -368,10 +430,11 @@ async function persistRun(run: TestRun, config: RunPersistenceConfig) {
     `;
     for (const result of run.results) {
       await transaction`
-        INSERT INTO model_results (id, test_run_id, model_name, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes)
-        VALUES (${result.id}, ${run.id}, ${result.modelName}, ${result.status}, ${result.evalStatus}, ${result.responseText}, ${result.inputTokens}, ${result.outputTokens}, ${result.ttftMs}, ${result.tokPerSec}, ${result.totalDurationMs}, ${result.errorMessage}, ${result.humanStatus}, ${result.humanNotes})
+        INSERT INTO model_results (id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes)
+        VALUES (${result.id}, ${run.id}, ${result.modelName}, ${result.sampleIndex}, ${result.status}, ${result.evalStatus}, ${result.responseText}, ${result.inputTokens}, ${result.outputTokens}, ${result.ttftMs}, ${result.tokPerSec}, ${result.totalDurationMs}, ${result.errorMessage}, ${result.humanStatus}, ${result.humanNotes})
         ON CONFLICT (id) DO UPDATE SET
           model_name = EXCLUDED.model_name,
+          sample_index = EXCLUDED.sample_index,
           status = EXCLUDED.status,
           eval_status = EXCLUDED.eval_status,
           response_text = EXCLUDED.response_text,
@@ -442,6 +505,8 @@ function restoreRun(row: Record<string, unknown>, results: ModelResult[]): Persi
       status: String(row.status) as TestRun["status"],
       paused: Boolean(row.paused),
       controlVersion: Number(row.control_version ?? 0),
+      scenarioId: row.scenario_id ? String(row.scenario_id) : null,
+      samplesPerModel: Number(row.samples_per_model ?? 1),
       systemPrompt: String(row.system_prompt),
       userMessages: parseJsonArray(row.user_messages),
       models: parseJsonArray(row.selected_models),
@@ -475,6 +540,7 @@ function restoreResult(row: Record<string, unknown>, turns: TurnResult[], evalua
   return {
     id: String(row.id),
     modelName: String(row.model_name),
+    sampleIndex: Number(row.sample_index ?? 0),
     status: String(row.status) as ModelResult["status"],
     evalStatus: String(row.eval_status) as ModelResult["evalStatus"],
     responseText: row.response_text ? String(row.response_text) : null,
@@ -491,25 +557,12 @@ function restoreResult(row: Record<string, unknown>, turns: TurnResult[], evalua
   } satisfies ModelResult;
 }
 
-function restorePrompt(row: Record<string, unknown>): PromptTemplate {
-  return {
-    id: String(row.id),
-    title: String(row.title),
-    systemPrompt: String(row.system_prompt),
-    tags: parseJsonArray(row.tags),
-    createdAt: dateToIso(row.created_at),
-    updatedAt: dateToIso(row.updated_at),
-  };
-}
-
-function restoreSuite(row: Record<string, unknown>): TestSuite {
+function restoreScenario(row: Record<string, unknown>): Scenario {
   return {
     id: String(row.id),
     name: String(row.name),
-    description: String(row.description ?? ""),
-    promptTemplateId: row.system_prompt_id ? String(row.system_prompt_id) : null,
+    systemPrompt: String(row.system_prompt),
     userMessages: parseJsonArray(row.user_messages),
-    tags: parseJsonArray(row.tags),
     createdAt: dateToIso(row.created_at),
     updatedAt: dateToIso(row.updated_at),
   };

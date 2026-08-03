@@ -4,10 +4,9 @@ import type {
   Evaluation,
   HumanStatus,
   ModelResult,
-  PromptTemplate,
   RunStatus,
+  Scenario,
   TestRun,
-  TestSuite,
   TurnResult,
 } from "@/lib/contracts";
 
@@ -30,15 +29,6 @@ export function getSqliteDb(): Database.Database {
 
 function initSqliteTables(db: Database.Database) {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS prompt_templates (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      system_prompt TEXT NOT NULL,
-      tags TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS app_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       ollama_url TEXT NOT NULL,
@@ -49,13 +39,11 @@ function initSqliteTables(db: Database.Database) {
       updated_at TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS test_suites (
+    CREATE TABLE IF NOT EXISTS scenarios (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      description TEXT,
-      system_prompt_id TEXT,
+      system_prompt TEXT NOT NULL,
       user_messages TEXT NOT NULL,
-      tags TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -65,6 +53,8 @@ function initSqliteTables(db: Database.Database) {
       status TEXT NOT NULL,
       paused INTEGER NOT NULL DEFAULT 0,
       control_version INTEGER NOT NULL DEFAULT 1,
+      scenario_id TEXT,
+      samples_per_model INTEGER NOT NULL DEFAULT 1,
       system_prompt TEXT NOT NULL,
       ollama_url TEXT NOT NULL,
       user_messages TEXT NOT NULL,
@@ -81,6 +71,7 @@ function initSqliteTables(db: Database.Database) {
       id TEXT PRIMARY KEY,
       test_run_id TEXT NOT NULL,
       model_name TEXT NOT NULL,
+      sample_index INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL,
       eval_status TEXT NOT NULL DEFAULT 'PENDING',
       response_text TEXT,
@@ -134,58 +125,75 @@ function initSqliteTables(db: Database.Database) {
   if (!turnColumns.some((column) => column.name === "thinking")) {
     migrationDb.exec("ALTER TABLE model_result_turns ADD COLUMN thinking TEXT NOT NULL DEFAULT ''");
   }
+
+  const runColumns = migrationDb.prepare("PRAGMA table_info(test_runs)").all() as SqlRow[];
+  if (!runColumns.some((column) => column.name === "scenario_id")) {
+    migrationDb.exec("ALTER TABLE test_runs ADD COLUMN scenario_id TEXT");
+  }
+  if (!runColumns.some((column) => column.name === "samples_per_model")) {
+    migrationDb.exec("ALTER TABLE test_runs ADD COLUMN samples_per_model INTEGER NOT NULL DEFAULT 1");
+  }
+
+  const resultColumns = migrationDb.prepare("PRAGMA table_info(model_results)").all() as SqlRow[];
+  if (!resultColumns.some((column) => column.name === "sample_index")) {
+    migrationDb.exec("ALTER TABLE model_results ADD COLUMN sample_index INTEGER NOT NULL DEFAULT 0");
+  }
+
+  const hasScenarios = Number((migrationDb
+    .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'scenarios'")
+    .get() as SqlRow).count);
+  const hasLegacySuites = Number((migrationDb
+    .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'test_suites'")
+    .get() as SqlRow).count);
+  const scenarioCount = Number((migrationDb.prepare("SELECT COUNT(*) AS c FROM scenarios").get() as SqlRow).c);
+  if (hasScenarios === 0 || (hasLegacySuites > 0 && scenarioCount === 0)) {
+    const suiteRows = migrationDb.prepare("SELECT * FROM test_suites").all() as SqlRow[];
+    const promptRows = migrationDb.prepare("SELECT * FROM prompt_templates").all() as SqlRow[];
+    const promptsById = new Map(promptRows.map((prompt) => [String(prompt.id), String(prompt.system_prompt)]));
+    const insertScenario = migrationDb.prepare(`
+      INSERT INTO scenarios (id, name, system_prompt, user_messages, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const migrate = migrationDb.transaction(() => {
+      for (const suite of suiteRows) {
+        const systemPrompt = suite.system_prompt_id ? promptsById.get(String(suite.system_prompt_id)) : undefined;
+        if (!systemPrompt) continue;
+        insertScenario.run(
+          String(suite.id),
+          String(suite.name),
+          systemPrompt,
+          String(suite.user_messages),
+          String(suite.created_at),
+          String(suite.updated_at),
+        );
+      }
+    });
+    migrate();
+  }
 }
 
-export function sqlitePersistPrompt(prompt: PromptTemplate) {
+export function sqlitePersistScenario(scenario: Scenario) {
   const db = getSqliteDb();
   db.prepare(`
-    INSERT INTO prompt_templates (id, title, system_prompt, tags, created_at, updated_at)
+    INSERT INTO scenarios (id, name, system_prompt, user_messages, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title,
-      system_prompt = excluded.system_prompt,
-      tags = excluded.tags,
-      updated_at = excluded.updated_at
-  `).run(
-    prompt.id,
-    prompt.title,
-    prompt.systemPrompt,
-    JSON.stringify(prompt.tags),
-    prompt.createdAt,
-    prompt.updatedAt,
-  );
-}
-
-export function sqliteDeletePrompt(id: string) {
-  getSqliteDb().prepare("DELETE FROM prompt_templates WHERE id = ?").run(id);
-}
-
-export function sqlitePersistSuite(suite: TestSuite) {
-  const db = getSqliteDb();
-  db.prepare(`
-    INSERT INTO test_suites (id, name, description, system_prompt_id, user_messages, tags, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
-      description = excluded.description,
-      system_prompt_id = excluded.system_prompt_id,
+      system_prompt = excluded.system_prompt,
       user_messages = excluded.user_messages,
-      tags = excluded.tags,
       updated_at = excluded.updated_at
   `).run(
-    suite.id,
-    suite.name,
-    suite.description,
-    suite.promptTemplateId,
-    JSON.stringify(suite.userMessages),
-    JSON.stringify(suite.tags),
-    suite.createdAt,
-    suite.updatedAt,
+    scenario.id,
+    scenario.name,
+    scenario.systemPrompt,
+    JSON.stringify(scenario.userMessages),
+    scenario.createdAt,
+    scenario.updatedAt,
   );
 }
 
-export function sqliteDeleteSuite(id: string) {
-  getSqliteDb().prepare("DELETE FROM test_suites WHERE id = ?").run(id);
+export function sqliteDeleteScenario(id: string) {
+  getSqliteDb().prepare("DELETE FROM scenarios WHERE id = ?").run(id);
 }
 
 export function sqlitePersistHumanReview(resultId: string, status: string, notes: string) {
@@ -282,12 +290,14 @@ export function sqlitePersistRun(
 
   const transaction = db.transaction(() => {
     db.prepare(`
-      INSERT INTO test_runs (id, status, paused, control_version, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         status = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.status ELSE test_runs.status END,
         paused = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.paused ELSE test_runs.paused END,
         control_version = MAX(test_runs.control_version, excluded.control_version),
+        scenario_id = excluded.scenario_id,
+        samples_per_model = excluded.samples_per_model,
         system_prompt = excluded.system_prompt,
         ollama_url = excluded.ollama_url,
         user_messages = excluded.user_messages,
@@ -302,6 +312,8 @@ export function sqlitePersistRun(
       run.status,
       run.paused ? 1 : 0,
       run.controlVersion,
+      run.scenarioId,
+      run.samplesPerModel,
       run.systemPrompt,
       config.ollamaUrl,
       JSON.stringify(run.userMessages),
@@ -316,10 +328,11 @@ export function sqlitePersistRun(
 
     for (const result of run.results) {
       db.prepare(`
-        INSERT INTO model_results (id, test_run_id, model_name, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO model_results (id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           model_name = excluded.model_name,
+          sample_index = excluded.sample_index,
           status = excluded.status,
           eval_status = excluded.eval_status,
           response_text = excluded.response_text,
@@ -335,6 +348,7 @@ export function sqlitePersistRun(
         result.id,
         run.id,
         result.modelName,
+        result.sampleIndex,
         result.status,
         result.evalStatus,
         result.responseText,
@@ -443,8 +457,7 @@ export function sqliteLoadState(targetRunId?: string) {
     }
   }
 
-  const promptRows = targetRunId ? [] : (db.prepare("SELECT * FROM prompt_templates ORDER BY updated_at DESC").all() as SqlRow[]);
-  const suiteRows = targetRunId ? [] : (db.prepare("SELECT * FROM test_suites ORDER BY updated_at DESC").all() as SqlRow[]);
+  const scenarioRows = targetRunId ? [] : (db.prepare("SELECT * FROM scenarios ORDER BY updated_at DESC").all() as SqlRow[]);
 
   const turnsByResult = new Map<string, TurnResult[]>();
   for (const row of turnRows) {
@@ -489,6 +502,7 @@ export function sqliteLoadState(targetRunId?: string) {
     const result: ModelResult = {
       id: rowId,
       modelName: String(row.model_name),
+      sampleIndex: Number(row.sample_index ?? 0),
       status: row.status as ModelResult["status"],
       evalStatus: row.eval_status as ModelResult["evalStatus"],
       responseText: String(row.response_text || ""),
@@ -528,6 +542,8 @@ export function sqliteLoadState(targetRunId?: string) {
       status: row.status as RunStatus,
       paused: Boolean(row.paused),
       controlVersion: Number(row.control_version || 1),
+      scenarioId: row.scenario_id ? String(row.scenario_id) : null,
+      samplesPerModel: Number(row.samples_per_model ?? 1),
       systemPrompt: String(row.system_prompt),
       userMessages: JSON.parse(String(row.user_messages)),
       models: JSON.parse(String(row.selected_models)),
@@ -548,25 +564,14 @@ export function sqliteLoadState(targetRunId?: string) {
     };
   });
 
-  const prompts: PromptTemplate[] = promptRows.map((row) => ({
-    id: String(row.id),
-    title: String(row.title),
-    systemPrompt: String(row.system_prompt),
-    tags: JSON.parse(String(row.tags || "[]")),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
-  }));
-
-  const suites: TestSuite[] = suiteRows.map((row) => ({
+  const scenarios: Scenario[] = scenarioRows.map((row) => ({
     id: String(row.id),
     name: String(row.name),
-    description: String(row.description || ""),
-    promptTemplateId: row.system_prompt_id ? String(row.system_prompt_id) : null,
+    systemPrompt: String(row.system_prompt),
     userMessages: JSON.parse(String(row.user_messages)),
-    tags: JSON.parse(String(row.tags || "[]")),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   }));
 
-  return { runs, prompts, suites };
+  return { runs, scenarios };
 }

@@ -4,20 +4,17 @@ import type {
   Evaluation,
   HumanStatus,
   ModelResult,
-  PromptTemplate,
   RunEvent,
+  Scenario,
   TestRun,
-  TestSuite,
   TurnResult,
 } from "@/lib/contracts";
 import {
   loadPersistedSettings,
   loadPersistedState,
   queuePersistedRun,
-  deletePersistedPrompt,
-  deletePersistedSuite,
-  persistPrompt,
-  persistSuite,
+  deletePersistedScenario,
+  persistScenario,
   persistHumanReview,
   persistSettings,
   type PersistedSettings,
@@ -38,8 +35,7 @@ type StoredRun = TestRun & {
 
 type StoreState = {
   runs: Map<string, StoredRun>;
-  prompts: Map<string, PromptTemplate>;
-  suites: Map<string, TestSuite>;
+  scenarios: Map<string, Scenario>;
   hydrated: boolean;
   hydrationPromise?: Promise<void>;
   settings: PersistedSettings;
@@ -52,8 +48,7 @@ const globalStore = globalThis as typeof globalThis & {
 const state: StoreState =
   globalStore.__compareStore ?? {
     runs: new Map(),
-    prompts: new Map(),
-    suites: new Map(),
+    scenarios: new Map(),
     hydrated: false,
     settings: defaultSettings(),
   };
@@ -69,12 +64,16 @@ export const benchmarkStore = {
       status: "PENDING",
       paused: false,
       controlVersion: 0,
+      scenarioId: input.scenarioId ?? null,
+      samplesPerModel: input.samplesPerModel ?? 1,
       systemPrompt: input.systemPrompt,
       userMessages: input.userMessages,
       models: input.models,
       parameters: input.parameters,
       evaluatorModel: input.evaluator?.model ?? null,
-      results: input.models.map((modelName) => createModelResult(modelName)),
+      results: input.models.flatMap((modelName) =>
+        Array.from({ length: input.samplesPerModel ?? 1 }, (_, sampleIndex) => createModelResult(modelName, sampleIndex)),
+      ),
       createdAt: now,
       startedAt: null,
       finishedAt: null,
@@ -99,8 +98,7 @@ export const benchmarkStore = {
       if (persistedSettings) state.settings = persistedSettings;
       if (persisted) {
         for (const run of persisted.runs) restoreRun(run.run, run.config);
-        for (const prompt of persisted.prompts) state.prompts.set(prompt.id, prompt);
-        for (const suite of persisted.suites) state.suites.set(suite.id, suite);
+        for (const scenario of persisted.scenarios) state.scenarios.set(scenario.id, scenario);
       }
       state.hydrated = true;
     })().finally(() => {
@@ -306,65 +304,39 @@ export const benchmarkStore = {
     };
   },
 
-  listPrompts() {
-    return [...state.prompts.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  listScenarios() {
+    return [...state.scenarios.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
-  async createPrompt(input: Pick<PromptTemplate, "title" | "systemPrompt" | "tags">) {
+  async createScenario(input: Pick<Scenario, "name" | "systemPrompt" | "userMessages">) {
     const now = new Date().toISOString();
-    const prompt: PromptTemplate = { id: crypto.randomUUID(), ...input, createdAt: now, updatedAt: now };
-    await persistPrompt(prompt);
-    state.prompts.set(prompt.id, prompt);
-    return prompt;
+    const scenario: Scenario = { id: crypto.randomUUID(), ...input, createdAt: now, updatedAt: now };
+    await persistScenario(scenario);
+    state.scenarios.set(scenario.id, scenario);
+    return scenario;
   },
 
-  async updatePrompt(id: string, input: Pick<PromptTemplate, "title" | "systemPrompt" | "tags">) {
-    const prompt = state.prompts.get(id);
-    if (!prompt) return null;
-    const updatedPrompt = { ...prompt, ...input, updatedAt: new Date().toISOString() };
-    await persistPrompt(updatedPrompt);
-    state.prompts.set(id, updatedPrompt);
-    return updatedPrompt;
+  async updateScenario(id: string, input: Pick<Scenario, "name" | "systemPrompt" | "userMessages">) {
+    const scenario = state.scenarios.get(id);
+    if (!scenario) return null;
+    const updatedScenario = { ...scenario, ...input, updatedAt: new Date().toISOString() };
+    await persistScenario(updatedScenario);
+    state.scenarios.set(id, updatedScenario);
+    return updatedScenario;
   },
 
-  async deletePrompt(id: string) {
-    if (!state.prompts.has(id)) return false;
-    await deletePersistedPrompt(id);
-    return state.prompts.delete(id);
-  },
-
-  listSuites() {
-    return [...state.suites.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  },
-
-  async createSuite(input: Pick<TestSuite, "name" | "description" | "promptTemplateId" | "userMessages" | "tags">) {
-    const now = new Date().toISOString();
-    const suite: TestSuite = { id: crypto.randomUUID(), ...input, createdAt: now, updatedAt: now };
-    await persistSuite(suite);
-    state.suites.set(suite.id, suite);
-    return suite;
-  },
-
-  async updateSuite(id: string, input: Pick<TestSuite, "name" | "description" | "promptTemplateId" | "userMessages" | "tags">) {
-    const suite = state.suites.get(id);
-    if (!suite) return null;
-    const updatedSuite = { ...suite, ...input, updatedAt: new Date().toISOString() };
-    await persistSuite(updatedSuite);
-    state.suites.set(id, updatedSuite);
-    return updatedSuite;
-  },
-
-  async deleteSuite(id: string) {
-    if (!state.suites.has(id)) return false;
-    await deletePersistedSuite(id);
-    return state.suites.delete(id);
+  async deleteScenario(id: string) {
+    if (!state.scenarios.has(id)) return false;
+    await deletePersistedScenario(id);
+    return state.scenarios.delete(id);
   },
 };
 
-function createModelResult(modelName: string): ModelResult {
+function createModelResult(modelName: string, sampleIndex: number): ModelResult {
   return {
     id: crypto.randomUUID(),
     modelName,
+    sampleIndex,
     status: "PENDING",
     evalStatus: "PENDING",
     responseText: null,
@@ -425,6 +397,8 @@ function snapshot(run: StoredRun): TestRun {
     status: run.status,
     paused: run.paused,
     controlVersion: run.controlVersion,
+    scenarioId: run.scenarioId,
+    samplesPerModel: run.samplesPerModel,
     systemPrompt: run.systemPrompt,
     userMessages: run.userMessages,
     models: run.models,

@@ -1,31 +1,31 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { benchmarkStore } from "@/lib/benchmark-store";
+import { z } from "zod";
 
-const suiteSchema = z.object({
+const scenarioSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  description: z.string().max(10_000).default(""),
-  promptTemplateId: z.string().uuid().nullable().default(null),
+  systemPrompt: z.string().trim().min(1).max(50_000),
   userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
-  tags: z.array(z.string().trim().min(1).max(64)).max(30).default([]),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   await benchmarkStore.hydrate();
   const { id } = await params;
   const body = await readJson(request);
-  const parsed = suiteSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "Invalid test suite." }, { status: 400 });
-  const suite = await benchmarkStore.updateSuite(id, parsed.data);
-  return suite ? NextResponse.json({ suite }) : NextResponse.json({ error: "Suite not found." }, { status: 404 });
+  const parsed = scenarioSchema.safeParse(body);
+  if (!parsed.success) return NextResponse.json({ error: "Invalid scenario." }, { status: 400 });
+  const scenario = await benchmarkStore.updateScenario(id, parsed.data);
+  return scenario
+    ? NextResponse.json({ scenario })
+    : NextResponse.json({ error: "Scenario not found." }, { status: 404 });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   await benchmarkStore.hydrate();
   const { id } = await params;
-  return (await benchmarkStore.deleteSuite(id))
+  return (await benchmarkStore.deleteScenario(id))
     ? new Response(null, { status: 204 })
-    : NextResponse.json({ error: "Suite not found." }, { status: 404 });
+    : NextResponse.json({ error: "Scenario not found." }, { status: 404 });
 }
 
 async function readJson(request: Request) {

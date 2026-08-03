@@ -75,6 +75,43 @@ describe("enqueueBenchmark", () => {
     expect(secondMessages[1].content).toBe("Second question.");
   });
 
+  it("runs multiple samples per model without mixing their responses", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => {
+        calls += 1;
+        return new Response(
+          [
+            JSON.stringify({ message: { content: `Answer ${calls}` } }),
+            JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 8, eval_duration: 1_000_000_000, total_duration: 1_200_000_000 }),
+          ].join("\n"),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const run = benchmarkStore.createRun({
+      ollamaUrl: "http://localhost:11434",
+      samplesPerModel: 2,
+      systemPrompt: "Be concise.",
+      userMessages: ["Say hello."],
+      models: [`sampled-model-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    expect(run.results).toHaveLength(2);
+    expect(run.results.map((result) => result.sampleIndex)).toEqual([0, 1]);
+
+    enqueueBenchmark(run.id);
+    const completed = await waitForRun(run.id);
+
+    expect(completed.status).toBe("COMPLETED");
+    expect(completed.results).toHaveLength(2);
+    expect(completed.results.map((result) => result.responseText).sort()).toEqual(["Answer 1", "Answer 2"]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("waits while a run is paused and resumes without losing the run", async () => {
     vi.stubGlobal(
       "fetch",

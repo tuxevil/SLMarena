@@ -32,22 +32,34 @@ test.beforeEach(async ({ page }) => {
     }
     await route.fulfill({ json: { settings: { ollamaUrl: "http://127.0.0.1:11434", evaluatorBaseUrl: "", evaluatorModel: "", evaluatorApiKeyConfigured: false } } });
   });
-  await page.route(/\/api\/prompts(?:\?|$)/, async (route) => {
+  await page.route(/\/api\/scenarios(?:\?|$)/, async (route) => {
     if (route.request().method() === "POST") {
-      await route.fulfill({ status: 201, json: { prompt: { id: "prompt-1", title: "Saved prompt", systemPrompt: "Be concise.", tags: ["demo"], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } } });
+      await route.fulfill({ status: 201, json: { scenario: { id: "scenario-1", name: "Smoke scenario", systemPrompt: "Be concise.", userMessages: ["Compare REST and GraphQL."], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } } });
       return;
     }
-    await route.fulfill({ json: { prompts: [] } });
-  });
-  await page.route(/\/api\/suites(?:\?|$)/, async (route) => {
-    if (route.request().method() === "POST") {
-      await route.fulfill({ status: 201, json: { suite: { id: "suite-1", name: "Smoke suite", description: "", promptTemplateId: "prompt-1", userMessages: ["Compare REST and GraphQL."], tags: ["demo"], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } } });
-      return;
-    }
-    await route.fulfill({ json: { suites: [] } });
+    await route.fulfill({ json: { scenarios: [] } });
   });
   await page.route(/\/api\/runs\?/, async (route) => {
     await route.fulfill({ json: { runs: [], total: 0, page: 1, pageSize: 50 } });
+  });
+  await page.route(/\/api\/analysis\?/, async (route) => {
+    await route.fulfill({ json: {
+      scenarioKey: "scenario:scenario-1",
+      runs: 2,
+      bestModel: { modelName: "llama3.2", averageStars: 4.5 },
+      models: [{
+        modelName: "llama3.2",
+        samples: 4,
+        evaluatedSamples: 4,
+        failures: 0,
+        distribution: { 4: 2, 5: 2 },
+        averageStars: 4.5,
+        averageTtftMs: 92,
+        averageOutputTokens: 24,
+        averageTokPerSec: 18.5,
+        averageTotalDurationMs: 1_300,
+      }],
+    } });
   });
   await page.route(/\/api\/ollama\/models/, async (route) => {
     await route.fulfill({ json: { models: [{ name: "llama3.2", size: "4 GB" }] } });
@@ -80,14 +92,15 @@ test("runs a benchmark and renders progressive evaluation", async ({ page }) => 
   await expect(page.getByText("Compliance")).toBeVisible();
 });
 
-test("saves global settings and exposes prompt/suite controls", async ({ page }) => {
+test("saves global settings and exposes scenario controls", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByLabel("OpenAI-compatible endpoint").fill("https://judge.example/v1");
   await page.getByLabel("Judge model").fill("judge");
   await page.getByRole("button", { name: "Save global settings" }).click();
   await expect(page.getByText("Global settings saved.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save template" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save suite" })).toBeVisible();
+  await page.getByRole("button", { name: "Benchmark", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save scenario" })).toBeVisible();
 });
 
 function createRun(status: string, resultPatch: Record<string, unknown> = {}) {
@@ -96,6 +109,8 @@ function createRun(status: string, resultPatch: Record<string, unknown> = {}) {
     status,
     paused: false,
     controlVersion: 0,
+    scenarioId: null,
+    samplesPerModel: 1,
     systemPrompt: "Be concise.",
     userMessages: ["Compare REST and GraphQL."],
     models: ["llama3.2"],
@@ -104,6 +119,7 @@ function createRun(status: string, resultPatch: Record<string, unknown> = {}) {
     results: [{
       id: "result-1",
       modelName: "llama3.2",
+      sampleIndex: 0,
       status,
       evalStatus: status === "COMPLETED" ? "COMPLETED" : "PENDING",
       responseText: null,
