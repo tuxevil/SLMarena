@@ -2,11 +2,11 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
-> **Architecture in one line:** Issues live in a local Dolt database
-> (`.beads/dolt/`); cross-machine sync uses `bd dolt push/pull` (a
-> git-compatible protocol), stored under `refs/dolt/data` on your git
-> remote — separate from `refs/heads/*` where your code lives.
-> `.beads/issues.jsonl` is a passive export, not the wire protocol.
+> **Architecture in one line:** Issues live in this repository's local
+> embedded Dolt database (`.beads/embeddeddolt/`). Beads is intentionally
+> local-only for this project; do not configure a Dolt remote or run
+> `bd dolt push/pull` unless explicitly requested.
+> `.beads/issues.jsonl` is a passive export, not the source of truth.
 >
 > See [SYNC_CONCEPTS.md](https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md)
 > for the one-screen overview and anti-patterns (don't treat JSONL as the
@@ -20,8 +20,9 @@ bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --claim  # Claim work atomically
 bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
 ```
+
+This repository does not sync Beads issues to a remote.
 
 ## Non-Interactive Shell Commands
 

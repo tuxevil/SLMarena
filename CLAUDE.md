@@ -57,6 +57,11 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
 
+## Local Beads Mode
+
+Issues use the embedded Dolt database at `.beads/embeddeddolt/` and remain
+local to this checkout. Do not configure a Dolt remote or run `bd dolt
+push/pull` unless explicitly requested.
 
 ## Build & Test
 

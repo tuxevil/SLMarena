@@ -1,6 +1,26 @@
-
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 .beads-credential-key
 .beads/proxieddb/
+
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Test and coverage output
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
