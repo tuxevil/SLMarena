@@ -1065,6 +1065,13 @@ type ResultScoreSummary = {
   averageAccuracyRating: number | null;
 };
 
+type ResultTelemetrySummary = {
+  averageOutputTokens: number | null;
+  averageTtftMs: number | null;
+  averageTokPerSec: number | null;
+  averageTotalDurationMs: number | null;
+};
+
 type ResultModelGroup = {
   modelName: string;
   items: ConsolidatedItem[];
@@ -1111,6 +1118,16 @@ function getResultScoreSummary(items: ConsolidatedItem[]): ResultScoreSummary | 
     averageGrammarRating: averageNumbers(evaluations.map((evaluation) => evaluation.grammarRating)),
     averageComplianceRating: averageNumbers(evaluations.map((evaluation) => evaluation.complianceRating)),
     averageAccuracyRating: averageNumbers(evaluations.map((evaluation) => evaluation.accuracyRating)),
+  };
+}
+
+function getResultTelemetrySummary(items: ConsolidatedItem[]): ResultTelemetrySummary {
+  const completed = items.map((item) => item.result).filter((result) => result.status === "COMPLETED");
+  return {
+    averageOutputTokens: averageNumbers(completed.map((result) => result.outputTokens)),
+    averageTtftMs: averageNumbers(completed.map((result) => result.ttftMs)),
+    averageTokPerSec: averageNumbers(completed.map((result) => result.tokPerSec)),
+    averageTotalDurationMs: averageNumbers(completed.map((result) => result.totalDurationMs)),
   };
 }
 
@@ -1244,6 +1261,7 @@ function ModelResultGroup({
 }) {
   const completedCount = items.filter((item) => item.result.status === "COMPLETED").length;
   const resultsId = `model-group-results-${groupIndex}`;
+  const telemetrySummary = getResultTelemetrySummary(items);
 
   return (
     <section className="model-result-group" aria-labelledby={`model-group-${groupIndex}`}>
@@ -1256,7 +1274,7 @@ function ModelResultGroup({
           <span className="run-count">
             {items.length} test{items.length === 1 ? "" : "s"} · {completedCount} completed
           </span>
-          <ModelScore summary={scoreSummary} />
+          <ModelScore summary={scoreSummary} telemetry={telemetrySummary} />
           <button
             aria-controls={resultsId}
             aria-expanded={!collapsed}
@@ -1290,7 +1308,7 @@ function ModelResultGroup({
   );
 }
 
-function ModelScore({ summary }: { summary: ResultScoreSummary | null }) {
+function ModelScore({ summary, telemetry }: { summary: ResultScoreSummary | null; telemetry: ResultTelemetrySummary }) {
   if (!summary) {
     return (
       <div className="model-score model-score-empty">
@@ -1304,44 +1322,69 @@ function ModelScore({ summary }: { summary: ResultScoreSummary | null }) {
       className="model-score"
       title={`Average ${summary.average.toFixed(1)} / 5 · minimum ${summary.minimum} / 5 · maximum ${summary.maximum} / 5`}
     >
-      <div className="model-score-primary">
-        <span className="model-score-caption">Average</span>
-        <span className="stars model-score-stars" aria-hidden="true">
-          {renderStars(summary.average)}
-        </span>
-        <strong>{summary.average.toFixed(1)}</strong>
-      </div>
-      <div className="model-score-range">
-        <span className="model-score-range-item">
-          <span>Min</span>
-          <span className="stars" aria-hidden="true">
-            {renderStars(summary.minimum)}
-          </span>
-          <strong>{summary.minimum}</strong>
-        </span>
-        <span className="model-score-range-item">
-          <span>Max</span>
-          <span className="stars" aria-hidden="true">
-            {renderStars(summary.maximum)}
-          </span>
-          <strong>{summary.maximum}</strong>
-        </span>
-      </div>
-      <div className="model-score-ratings">
-        <span className="model-score-ratings-label">Average ratings</span>
-        <div className="model-score-rating-grid">
-          <span className="model-score-rating">
-            <span>Grammar</span>
-            <strong>{formatRatingAverage(summary.averageGrammarRating)}</strong>
-          </span>
-          <span className="model-score-rating">
-            <span>Compliance</span>
-            <strong>{formatRatingAverage(summary.averageComplianceRating)}</strong>
-          </span>
-          <span className="model-score-rating">
-            <span>Accuracy</span>
-            <strong>{formatRatingAverage(summary.averageAccuracyRating)}</strong>
-          </span>
+      <div className="model-score-body">
+        <div>
+          <div className="model-score-primary">
+            <span className="model-score-caption">Average</span>
+            <span className="stars model-score-stars" aria-hidden="true">
+              {renderStars(summary.average)}
+            </span>
+            <strong>{summary.average.toFixed(1)}</strong>
+          </div>
+          <div className="model-score-range">
+            <span className="model-score-range-item">
+              <span>Min</span>
+              <span className="stars" aria-hidden="true">
+                {renderStars(summary.minimum)}
+              </span>
+              <strong>{summary.minimum}</strong>
+            </span>
+            <span className="model-score-range-item">
+              <span>Max</span>
+              <span className="stars" aria-hidden="true">
+                {renderStars(summary.maximum)}
+              </span>
+              <strong>{summary.maximum}</strong>
+            </span>
+          </div>
+        </div>
+        <div className="model-score-ratings">
+          <span className="model-score-ratings-label">Average ratings</span>
+          <div className="model-score-rating-grid">
+            <span className="model-score-rating">
+              <span>Grammar</span>
+              <strong>{formatRatingAverage(summary.averageGrammarRating)}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>Compliance</span>
+              <strong>{formatRatingAverage(summary.averageComplianceRating)}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>Accuracy</span>
+              <strong>{formatRatingAverage(summary.averageAccuracyRating)}</strong>
+            </span>
+          </div>
+        </div>
+        <div className="model-score-telemetry">
+          <span className="model-score-ratings-label">Avg telemetry</span>
+          <div className="model-score-telemetry-grid">
+            <span className="model-score-rating">
+              <span>Output</span>
+              <strong>{formatTelemetryAverage(telemetry.averageOutputTokens, 0, " tok")}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>TTFT</span>
+              <strong>{formatTelemetryAverage(telemetry.averageTtftMs, 1, " ms")}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>Tok/s</span>
+              <strong>{formatTelemetryAverage(telemetry.averageTokPerSec, 1)}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>Total</span>
+              <strong>{formatTelemetryAverage(telemetry.averageTotalDurationMs, 1, " ms")}</strong>
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -1350,6 +1393,10 @@ function ModelScore({ summary }: { summary: ResultScoreSummary | null }) {
 
 function formatRatingAverage(value: number | null) {
   return value === null ? "--" : `${value.toFixed(2)}/5`;
+}
+
+function formatTelemetryAverage(value: number | null, decimals: number, suffix = "") {
+  return value === null ? "--" : `${value.toFixed(decimals)}${suffix}`;
 }
 
 function ResultItem({

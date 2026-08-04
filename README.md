@@ -22,6 +22,10 @@ worker deployment backed by PostgreSQL and Redis.
 - Optionally evaluate answers through an OpenAI-compatible
   `/chat/completions` endpoint with structured JSON output.
 - Compare aggregated scores and telemetry across all runs for a scenario.
+- Collapse individual model groups, or all groups at once, while keeping their
+  summary cards visible.
+- Show per-model averages for the overall score plus Grammar, Compliance, and
+  Accuracy ratings.
 - Filter benchmark history by keyword, date, model, or score.
 - Add human review decisions and notes to completed answers.
 - Pause, resume, cancel, and delete individual samples.
@@ -237,7 +241,9 @@ host.
 Every result can be expanded to inspect the full response, conversation turns,
 run telemetry, automated evaluation, and human review controls. The comparison
 panel groups samples by model and reports score distribution, average score,
-TTFT, throughput, and output-token averages across runs with the same scenario.
+Grammar, Compliance, and Accuracy averages, TTFT, throughput, and output-token
+averages across runs with the same scenario. Use the model-group controls to
+collapse noisy result lists while leaving these summary metrics in view.
 
 ### Review history
 

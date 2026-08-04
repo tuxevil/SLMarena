@@ -137,7 +137,7 @@ test("runs a benchmark and renders progressive evaluation", async ({ page }) => 
   await expect(page.getByText("REST is simpler for this internal service.")).toBeVisible();
   await expect(page.getByLabel("5 out of 5 stars")).toBeVisible();
   await expect(page.getByText("Grammar: Clean.")).toBeVisible();
-  await expect(page.locator(".test-item").first().getByText("Compliance")).toBeVisible();
+  await expect(page.locator(".test-item").first().locator(".test-score-name", { hasText: "Compliance" })).toBeVisible();
 });
 
 test("keeps each benchmark result in a collapsible test row", async ({ page }) => {
@@ -156,9 +156,21 @@ test("keeps each benchmark result in a collapsible test row", async ({ page }) =
   await expect(resultList.locator(".model-score").first()).toContainText("Min");
   await expect(resultList.locator(".model-score").first()).toContainText("Max");
   await expect(resultList.locator(".model-score").first()).toContainText("Average ratings");
-  await expect(resultList.locator(".model-score").first()).toContainText("4.00/5");
-  await expect(resultList.locator(".model-score").first()).toContainText("3.50/5");
-  await expect(resultList.locator(".model-score").first()).toContainText("5.00/5");
+  const ratingAverages = resultList.locator(".model-score-ratings").first().locator(".model-score-rating");
+  await expect(ratingAverages).toHaveCount(3);
+  await expect(ratingAverages.nth(0)).toContainText("Grammar");
+  await expect(ratingAverages.nth(0)).toContainText("4.00/5");
+  await expect(ratingAverages.nth(1)).toContainText("Compliance");
+  await expect(ratingAverages.nth(1)).toContainText("3.50/5");
+  await expect(ratingAverages.nth(2)).toContainText("Accuracy");
+  await expect(ratingAverages.nth(2)).toContainText("4.00/5");
+  await expect(resultList.locator(".model-score").first()).toContainText("Avg telemetry");
+  const telemetryAverages = resultList.locator(".model-score-telemetry").first().locator(".model-score-rating");
+  await expect(telemetryAverages).toHaveCount(4);
+  await expect(telemetryAverages.nth(0)).toContainText("Output");
+  await expect(telemetryAverages.nth(1)).toContainText("TTFT");
+  await expect(telemetryAverages.nth(2)).toContainText("Tok/s");
+  await expect(telemetryAverages.nth(3)).toContainText("Total");
   await expect(resultList.locator("details.test-item")).toHaveCount(3);
   const firstGroup = resultList.locator(".model-result-group").first();
   await firstGroup.getByRole("button", { name: "Collapse llama3.2 results" }).click();
