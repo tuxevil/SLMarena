@@ -175,7 +175,7 @@ export async function evaluateModelResponse({
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    console.error("[compare] [Evaluator Error]", {
+    console.error("[slmarena] [Evaluator Error]", {
       status: response.status,
       endpoint,
       model: config.model,
@@ -183,13 +183,13 @@ export async function evaluateModelResponse({
     });
 
     if (response.status === 400) {
-      console.warn("[compare] [Evaluator Warning] HTTP 400 received. Retrying without response_format...");
+      console.warn("[slmarena] [Evaluator Warning] HTTP 400 received. Retrying without response_format...");
       const fallbackResponse = await makeRequest(false);
       if (fallbackResponse.ok) {
         response = fallbackResponse;
       } else {
         const fallbackErrorText = await fallbackResponse.text().catch(() => "");
-        console.error("[compare] [Evaluator Fallback Error]", {
+        console.error("[slmarena] [Evaluator Fallback Error]", {
           status: fallbackResponse.status,
           endpoint,
           model: config.model,

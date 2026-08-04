@@ -64,7 +64,7 @@ function getInitialLocalSettings(): {
 } | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem("compare_slm_settings");
+    const raw = localStorage.getItem("slmarena_settings");
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -378,7 +378,7 @@ export function BenchmarkDashboard() {
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem(
-            "compare_slm_settings",
+            "slmarena_settings",
             JSON.stringify({
               ollamaUrl,
               evaluatorBaseUrl,
@@ -484,7 +484,7 @@ export function BenchmarkDashboard() {
             C
           </span>
           <div>
-            <p className="eyebrow">Compare / control room</p>
+            <p className="eyebrow">SLMarena / control room</p>
             <h1>Benchmark workspace</h1>
           </div>
         </div>

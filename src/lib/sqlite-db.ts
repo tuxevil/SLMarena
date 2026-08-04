@@ -18,7 +18,7 @@ let dbInstance: Database.Database | null = null;
 
 export function getSqliteDb(): Database.Database {
   if (!dbInstance) {
-    const dbPath = process.env.SQLITE_PATH?.trim() || path.join(process.cwd(), "compare.db");
+    const dbPath = process.env.SQLITE_PATH?.trim() || path.join(process.cwd(), "slmarena.db");
     dbInstance = new Database(dbPath);
     dbInstance.pragma("journal_mode = WAL");
     dbInstance.pragma("foreign_keys = ON");
@@ -227,7 +227,7 @@ export function sqliteLoadSettings(): {
     try {
       apiKey = decryptSecret(encrypted);
     } catch (error) {
-      console.error("[compare] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
+      console.error("[slmarena] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
     }
   }
   let params: BenchmarkParameters = { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 4096 };

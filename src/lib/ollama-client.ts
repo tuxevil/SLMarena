@@ -49,7 +49,7 @@ export async function streamOllamaChat({
   let streamed = await requestChat({ endpoint, model, messages, parameters, signal, onToken });
 
   if (!streamed.responseText && streamed.finalChunk.done_reason === "length" && parameters.numPredict < MAX_RETRY_NUM_PREDICT) {
-    console.warn("[compare] [Ollama] Response truncated while thinking; retrying with a larger token budget.");
+    console.warn("[slmarena] [Ollama] Response truncated while thinking; retrying with a larger token budget.");
     streamed = await requestChat({
       endpoint,
       model,

@@ -43,18 +43,18 @@ type StoreState = {
 };
 
 const globalStore = globalThis as typeof globalThis & {
-  __compareStore?: StoreState;
+  __slmarenaStore?: StoreState;
 };
 
 const state: StoreState =
-  globalStore.__compareStore ?? {
+  globalStore.__slmarenaStore ?? {
     runs: new Map(),
     scenarios: new Map(),
     hydrated: false,
     settings: defaultSettings(),
   };
 
-globalStore.__compareStore = state;
+globalStore.__slmarenaStore = state;
 
 export const benchmarkStore = {
   createRun(input: CreateRunInput): TestRun {
@@ -387,7 +387,7 @@ function emit(run: StoredRun, type: string) {
 
   const config: RunPersistenceConfig = { ollamaUrl: run.ollamaUrl, evaluator: run.evaluator };
   queuePersistedRun(event.run, type, config);
-  void publishRunEvent(event).catch((error) => console.error("[compare] run event publish failed", error));
+  void publishRunEvent(event).catch((error) => console.error("[slmarena] run event publish failed", error));
   for (const listener of run.listeners) listener(event);
 }
 

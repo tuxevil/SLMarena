@@ -12,13 +12,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: compare
-          POSTGRES_USER: compare
-          POSTGRES_PASSWORD: compare
+          POSTGRES_DB: slmarena
+          POSTGRES_USER: slmarena
+          POSTGRES_PASSWORD: slmarena
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U compare -d compare"
+          --health-cmd "pg_isready -U slmarena -d slmarena"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -32,7 +32,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://compare:compare@localhost:5432/compare
+      DATABASE_URL: postgresql://slmarena:slmarena@localhost:5432/slmarena
       REDIS_URL: redis://localhost:6379
       APP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       ALLOWED_OLLAMA_HOSTS: localhost,127.0.0.1

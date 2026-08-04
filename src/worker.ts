@@ -10,7 +10,7 @@ if (!process.env.REDIS_URL || !process.env.DATABASE_URL || !process.env.APP_ENCR
 }
 
 const worker = new Worker<{ runId: string }>(
-  "compare-benchmarks",
+  "slmarena-benchmarks",
   async (job) => executeBenchmark(job.data.runId),
   {
     connection: redisConnection(),
@@ -18,9 +18,9 @@ const worker = new Worker<{ runId: string }>(
   },
 );
 
-worker.on("completed", (job) => console.log(`[compare] completed ${job.data.runId}`));
-worker.on("failed", (job, error) => console.error(`[compare] failed ${job?.data.runId ?? "unknown"}`, error));
-worker.on("error", (error) => console.error("[compare] worker error", error));
+worker.on("completed", (job) => console.log(`[slmarena] completed ${job.data.runId}`));
+worker.on("failed", (job, error) => console.error(`[slmarena] failed ${job?.data.runId ?? "unknown"}`, error));
+worker.on("error", (error) => console.error("[slmarena] worker error", error));
 
 const shutdown = async () => {
   await worker.close();
@@ -31,4 +31,4 @@ process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
 
 await worker.waitUntilReady();
-console.log("[compare] benchmark worker ready");
+console.log("[slmarena] benchmark worker ready");

@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 import type { RunEvent } from "@/lib/contracts";
 
-const channelPrefix = "compare:run:";
+const channelPrefix = "slmarena:run:";
 let publisher: Redis | null | undefined;
 
 export async function publishRunEvent(event: RunEvent) {
@@ -19,10 +19,10 @@ export async function subscribeRunEvents(runId: string, onEvent: (event: RunEven
     try {
       onEvent(JSON.parse(payload) as RunEvent);
     } catch (error) {
-      console.error("[compare] invalid run event", error);
+      console.error("[slmarena] invalid run event", error);
     }
   });
-  subscriber.on("error", (error) => console.error("[compare] run event subscriber error", error));
+  subscriber.on("error", (error) => console.error("[slmarena] run event subscriber error", error));
 
   return async () => {
     await subscriber.unsubscribe(channel).catch(() => undefined);
@@ -38,7 +38,7 @@ function getPublisher() {
     return publisher;
   }
   publisher = new Redis(url, { maxRetriesPerRequest: null });
-  publisher.on("error", (error) => console.error("[compare] run event publisher error", error));
+  publisher.on("error", (error) => console.error("[slmarena] run event publisher error", error));
   return publisher;
 }
 

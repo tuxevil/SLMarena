@@ -17,8 +17,8 @@ export async function enqueueBenchmark(runId: string) {
     }
     const { Queue } = await import("bullmq");
     if (!redisQueue) {
-      redisQueue = new Queue("compare-benchmarks", { connection: redisConnection() });
-      redisQueue.on("error", (error) => console.error("[compare] benchmark queue error", error));
+      redisQueue = new Queue("slmarena-benchmarks", { connection: redisConnection() });
+      redisQueue.on("error", (error) => console.error("[slmarena] benchmark queue error", error));
     }
     await redisQueue.add("benchmark", { runId }, {
       attempts: 3,
@@ -194,7 +194,7 @@ async function executeModel(runId: string, resultId: string) {
         benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED", status: "COMPLETED" });
       } catch (error) {
         if (latestRun.cancelController.signal.aborted) return;
-        console.error("[compare] [Evaluation Failed]", {
+        console.error("[slmarena] [Evaluation Failed]", {
           runId,
           resultId,
           model: latestRun.evaluator?.model,
@@ -216,7 +216,7 @@ async function executeModel(runId: string, resultId: string) {
       return;
     }
 
-    console.error("[compare] [Inference Failed]", {
+    console.error("[slmarena] [Inference Failed]", {
       runId,
       resultId,
       error: error instanceof Error ? error.message : String(error),

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Compare / Local model benchmark",
+  title: "SLMarena / Local model benchmark",
   description: "Benchmark and review local language models side by side.",
 };
 

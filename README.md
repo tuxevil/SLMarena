@@ -54,7 +54,7 @@ Durable mode: Next.js → Redis/BullMQ → src/worker.ts
 ### Execution modes
 
 - **Local mode:** leave `REDIS_URL` empty. Benchmark jobs execute in the web
-  process and are persisted to SQLite at `SQLITE_PATH`, or to `compare.db` in
+  process and are persisted to SQLite at `SQLITE_PATH`, or to `slmarena.db` in
   the project directory when `SQLITE_PATH` is not set. This is the simplest
   setup for development and a single local user.
 - **Durable mode:** set both `DATABASE_URL` and `REDIS_URL`. The web process
@@ -137,7 +137,7 @@ The repository includes a Docker Compose file for local infrastructure.
 1. Copy the template and set the durable connection values in `.env.local`:
 
    ```dotenv
-   DATABASE_URL=postgresql://compare:local-development-only@localhost:55432/compare
+   DATABASE_URL=postgresql://slmarena:local-development-only@localhost:55432/slmarena
    REDIS_URL=redis://:local-development-only@localhost:6379
    ```
 
@@ -162,7 +162,7 @@ The repository includes a Docker Compose file for local infrastructure.
    the shell environment:
 
    ```bash
-   export DATABASE_URL=postgresql://compare:local-development-only@localhost:55432/compare
+   export DATABASE_URL=postgresql://slmarena:local-development-only@localhost:55432/slmarena
    npm run db:migrate
    ```
 
@@ -198,7 +198,7 @@ web process, and the worker loads it when started from the project directory.
 | `EVALUATOR_MODEL` | Optional evaluator model name. | Empty |
 | `EVALUATOR_API_KEY` | Optional evaluator key used as the initial default. | Empty |
 | `APP_ENCRYPTION_KEY` | Stable key used for AES-256-GCM encryption of evaluator credentials. Required to persist a key. | Empty |
-| `SQLITE_PATH` | SQLite database path when PostgreSQL is not configured. | `./compare.db` |
+| `SQLITE_PATH` | SQLite database path when PostgreSQL is not configured. | `./slmarena.db` |
 | `DATABASE_URL` | PostgreSQL connection string. Setting it selects PostgreSQL persistence. | Empty |
 | `REDIS_URL` | Redis connection string. Setting it enables BullMQ and cross-process events. | Empty |
 | `BENCHMARK_CONCURRENCY` | Maximum number of queued benchmark jobs processed by a worker or local queue. | `1` |

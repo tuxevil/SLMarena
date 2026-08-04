@@ -243,7 +243,7 @@ export async function loadPersistedSettings(): Promise<PersistedSettings | null>
     try {
       apiKey = decryptSecret(encrypted);
     } catch (error) {
-      console.error("[compare] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
+      console.error("[slmarena] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
     }
   }
   const params = parsePersistedParameters(row.parameters_json);
@@ -649,5 +649,5 @@ function dateOrNull(value: string | null) {
 }
 
 function reportPersistenceError(error: unknown) {
-  console.error("[compare] database persistence failed", error);
+  console.error("[slmarena] database persistence failed", error);
 }
