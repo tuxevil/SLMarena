@@ -1058,8 +1058,7 @@ function clampSamples(value: string) {
 
 type ResultScoreSummary = {
   average: number;
-  minimum: number;
-  maximum: number;
+  averageOverallRating: number;
   averageGrammarRating: number | null;
   averageComplianceRating: number | null;
   averageAccuracyRating: number | null;
@@ -1093,7 +1092,10 @@ function groupResultsByModel(results: ConsolidatedItem[]): ResultModelGroup[] {
     }))
     .sort((groupA, groupB) => {
       if (groupA.scoreSummary && groupB.scoreSummary) {
-        return groupB.scoreSummary.average - groupA.scoreSummary.average || groupA.modelName.localeCompare(groupB.modelName);
+        return (
+          groupB.scoreSummary.averageOverallRating - groupA.scoreSummary.averageOverallRating ||
+          groupA.modelName.localeCompare(groupB.modelName)
+        );
       }
       if (groupA.scoreSummary) return -1;
       if (groupB.scoreSummary) return 1;
@@ -1111,13 +1113,17 @@ function getResultScoreSummary(items: ConsolidatedItem[]): ResultScoreSummary | 
   const average = averageNumbers(scores);
   if (average === null) return null;
 
+  const averageGrammarRating = averageNumbers(evaluations.map((evaluation) => evaluation.grammarRating));
+  const averageComplianceRating = averageNumbers(evaluations.map((evaluation) => evaluation.complianceRating));
+  const averageAccuracyRating = averageNumbers(evaluations.map((evaluation) => evaluation.accuracyRating));
+
   return {
     average,
-    minimum: Math.min(...scores),
-    maximum: Math.max(...scores),
-    averageGrammarRating: averageNumbers(evaluations.map((evaluation) => evaluation.grammarRating)),
-    averageComplianceRating: averageNumbers(evaluations.map((evaluation) => evaluation.complianceRating)),
-    averageAccuracyRating: averageNumbers(evaluations.map((evaluation) => evaluation.accuracyRating)),
+    averageOverallRating:
+      averageNumbers([average, averageGrammarRating, averageComplianceRating, averageAccuracyRating]) ?? average,
+    averageGrammarRating,
+    averageComplianceRating,
+    averageAccuracyRating,
   };
 }
 
@@ -1320,51 +1326,9 @@ function ModelScore({ summary, telemetry }: { summary: ResultScoreSummary | null
   return (
     <div
       className="model-score"
-      title={`Average ${summary.average.toFixed(1)} / 5 · minimum ${summary.minimum} / 5 · maximum ${summary.maximum} / 5`}
+      title={`Overall ${summary.averageOverallRating.toFixed(1)} / 5 · Evaluator ${summary.average.toFixed(1)} / 5`}
     >
       <div className="model-score-body">
-        <div>
-          <div className="model-score-primary">
-            <span className="model-score-caption">Average</span>
-            <span className="stars model-score-stars" aria-hidden="true">
-              {renderStars(summary.average)}
-            </span>
-            <strong>{summary.average.toFixed(1)}</strong>
-          </div>
-          <div className="model-score-range">
-            <span className="model-score-range-item">
-              <span>Min</span>
-              <span className="stars" aria-hidden="true">
-                {renderStars(summary.minimum)}
-              </span>
-              <strong>{summary.minimum}</strong>
-            </span>
-            <span className="model-score-range-item">
-              <span>Max</span>
-              <span className="stars" aria-hidden="true">
-                {renderStars(summary.maximum)}
-              </span>
-              <strong>{summary.maximum}</strong>
-            </span>
-          </div>
-        </div>
-        <div className="model-score-ratings">
-          <span className="model-score-ratings-label">Average ratings</span>
-          <div className="model-score-rating-grid">
-            <span className="model-score-rating">
-              <span>Grammar</span>
-              <strong>{formatRatingAverage(summary.averageGrammarRating)}</strong>
-            </span>
-            <span className="model-score-rating">
-              <span>Compliance</span>
-              <strong>{formatRatingAverage(summary.averageComplianceRating)}</strong>
-            </span>
-            <span className="model-score-rating">
-              <span>Accuracy</span>
-              <strong>{formatRatingAverage(summary.averageAccuracyRating)}</strong>
-            </span>
-          </div>
-        </div>
         <div className="model-score-telemetry">
           <span className="model-score-ratings-label">Avg telemetry</span>
           <div className="model-score-telemetry-grid">
@@ -1385,6 +1349,34 @@ function ModelScore({ summary, telemetry }: { summary: ResultScoreSummary | null
               <strong>{formatTelemetryAverage(telemetry.averageTotalDurationMs, 1, " ms")}</strong>
             </span>
           </div>
+        </div>
+        <div className="model-score-ratings">
+          <span className="model-score-ratings-label">Average ratings</span>
+          <div className="model-score-rating-grid">
+            <span className="model-score-rating">
+              <span>Evaluator</span>
+              <strong>{formatRatingAverage(summary.average)}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>Grammar</span>
+              <strong>{formatRatingAverage(summary.averageGrammarRating)}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>Compliance</span>
+              <strong>{formatRatingAverage(summary.averageComplianceRating)}</strong>
+            </span>
+            <span className="model-score-rating">
+              <span>Accuracy</span>
+              <strong>{formatRatingAverage(summary.averageAccuracyRating)}</strong>
+            </span>
+          </div>
+        </div>
+        <div className="model-score-primary">
+          <span className="model-score-caption">Overall</span>
+          <span className="stars model-score-stars" aria-hidden="true">
+            {renderStars(summary.averageOverallRating)}
+          </span>
+          <strong>{summary.averageOverallRating.toFixed(1)}</strong>
         </div>
       </div>
     </div>
