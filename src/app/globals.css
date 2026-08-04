@@ -42,7 +42,7 @@ button {
 }
 
 .shell {
-  width: min(1560px, calc(100% - 48px));
+  width: calc(100% - 48px);
   margin: 0 auto;
   padding: 24px 0 72px;
 }
@@ -575,6 +575,8 @@ p {
   justify-content: space-between;
   gap: 18px;
   padding: 6px 8px 2px;
+  cursor: pointer;
+  user-select: none;
 }
 
 .model-group-identity {
@@ -646,8 +648,11 @@ p {
 
 .model-score-primary {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-left: 16px;
+  border-left: 1px solid rgb(200 242 107 / 14%);
 }
 
 .model-score-caption {
@@ -680,7 +685,6 @@ p {
   display: grid;
   gap: 6px;
   padding-left: 16px;
-  border-left: 1px solid rgb(200 242 107 / 14%);
 }
 
 .model-score-telemetry-grid {
@@ -878,7 +882,8 @@ p {
   transition: color 160ms ease, transform 160ms ease;
 }
 
-.test-item[open] .test-chevron {
+.test-item[open] .test-chevron,
+.model-result-group[data-open="true"] .test-chevron {
   color: var(--accent);
   transform: rotate(180deg);
 }

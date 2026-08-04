@@ -1270,8 +1270,11 @@ function ModelResultGroup({
   const telemetrySummary = getResultTelemetrySummary(items);
 
   return (
-    <section className="model-result-group" aria-labelledby={`model-group-${groupIndex}`}>
-      <header className="model-group-header">
+    <section className="model-result-group" data-open={!collapsed} aria-labelledby={`model-group-${groupIndex}`}>
+      <header
+        className="model-group-header"
+        onClick={() => onToggleCollapsed(modelName, !collapsed)}
+      >
         <div className="model-group-identity">
           <p className="model-group-kicker">Model group</p>
           <h3 id={`model-group-${groupIndex}`}>{modelName}</h3>
@@ -1286,11 +1289,15 @@ function ModelResultGroup({
             aria-expanded={!collapsed}
             aria-label={`${collapsed ? "Expand" : "Collapse"} ${modelName} results`}
             className="quiet-button model-group-toggle"
-            onClick={() => onToggleCollapsed(modelName, !collapsed)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapsed(modelName, !collapsed);
+            }}
             type="button"
           >
-            <span aria-hidden="true">{collapsed ? "＋" : "−"}</span>
-            {collapsed ? "Expand" : "Collapse"}
+            <span className="test-chevron" aria-hidden="true">
+              ↓
+            </span>
           </button>
         </div>
       </header>
@@ -1373,10 +1380,12 @@ function ModelScore({ summary, telemetry }: { summary: ResultScoreSummary | null
         </div>
         <div className="model-score-primary">
           <span className="model-score-caption">Overall</span>
-          <span className="stars model-score-stars" aria-hidden="true">
-            {renderStars(summary.averageOverallRating)}
-          </span>
-          <strong>{summary.averageOverallRating.toFixed(1)}</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span className="stars model-score-stars" aria-hidden="true">
+              {renderStars(summary.averageOverallRating)}
+            </span>
+            <strong>{summary.averageOverallRating.toFixed(1)}</strong>
+          </div>
         </div>
       </div>
     </div>
