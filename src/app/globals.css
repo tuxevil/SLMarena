@@ -606,9 +606,26 @@ p {
   gap: 14px;
 }
 
+.model-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.model-group-toggle span {
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .model-group-results {
   display: grid;
   gap: 10px;
+}
+
+.model-group-results[hidden] {
+  display: none;
 }
 
 .model-score {
@@ -670,6 +687,47 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+.model-score-ratings {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgb(200 242 107 / 14%);
+}
+
+.model-score-ratings-label {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.model-score-rating-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.model-score-rating {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model-score-rating > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-score-rating strong {
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .model-score-empty {
   display: block;
   min-width: 0;
@@ -701,7 +759,7 @@ p {
   display: grid;
   grid-template-columns: 42px minmax(170px, 0.75fr) minmax(180px, 1.25fr) auto auto 18px;
   gap: 18px;
-  align-items: center;
+  align-items: start;
   min-height: 92px;
   padding: 17px 20px;
   cursor: pointer;
@@ -759,9 +817,25 @@ p {
   color: #c7cfdd;
   font-size: 0.82rem;
   line-height: 1.45;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+}
+
+.test-preview-row {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.test-preview-name {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-width: 44px;
 }
 
 .test-preview.placeholder,
@@ -777,9 +851,20 @@ p {
   white-space: nowrap;
 }
 
-.test-score-label {
+.test-score-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.test-score-name {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-width: 68px;
+  text-align: right;
 }
 
 .test-chevron {
@@ -1264,6 +1349,10 @@ p {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .model-group-toggle {
+    align-self: flex-end;
   }
 
   .model-score {

@@ -1060,6 +1060,9 @@ type ResultScoreSummary = {
   average: number;
   minimum: number;
   maximum: number;
+  averageGrammarRating: number | null;
+  averageComplianceRating: number | null;
+  averageAccuracyRating: number | null;
 };
 
 type ResultModelGroup = {
@@ -1092,15 +1095,29 @@ function groupResultsByModel(results: ConsolidatedItem[]): ResultModelGroup[] {
 }
 
 function getResultScoreSummary(items: ConsolidatedItem[]): ResultScoreSummary | null {
-  const scores = items
-    .map((item) => item.result.evaluation?.scoreStars)
+  const evaluations = items
+    .map((item) => item.result.evaluation)
+    .filter((evaluation): evaluation is NonNullable<ModelResult["evaluation"]> => evaluation !== null);
+  const scores = evaluations
+    .map((evaluation) => evaluation.scoreStars)
     .filter((score): score is number => typeof score === "number");
-  if (scores.length === 0) return null;
+  const average = averageNumbers(scores);
+  if (average === null) return null;
+
   return {
-    average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
+    average,
     minimum: Math.min(...scores),
     maximum: Math.max(...scores),
+    averageGrammarRating: averageNumbers(evaluations.map((evaluation) => evaluation.grammarRating)),
+    averageComplianceRating: averageNumbers(evaluations.map((evaluation) => evaluation.complianceRating)),
+    averageAccuracyRating: averageNumbers(evaluations.map((evaluation) => evaluation.accuracyRating)),
   };
+}
+
+function averageNumbers(values: Array<number | null>) {
+  const present = values.filter((value): value is number => typeof value === "number");
+  if (present.length === 0) return null;
+  return Number((present.reduce((sum, value) => sum + value, 0) / present.length).toFixed(2));
 }
 
 function renderStars(value: number) {
@@ -1121,6 +1138,7 @@ function ResultsList({
   const modelGroups = groupResultsByModel(items);
   const resultNumbers = new Map(results.map((result, index) => [result.id, index + 1]));
   const [expandedResults, setExpandedResults] = useState<Set<string>>(() => new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
 
   function isResultOpen(resultId: string) {
     return expandedResults.has(resultId);
@@ -1128,6 +1146,7 @@ function ResultsList({
 
   const completedCount = results.filter((result) => result.status === "COMPLETED").length;
   const allExpanded = results.length > 0 && results.every((result) => isResultOpen(result.id));
+  const allGroupsCollapsed = modelGroups.length > 0 && modelGroups.every((group) => collapsedGroups.has(group.modelName));
 
   function toggleResult(resultId: string, open: boolean) {
     setExpandedResults((current) => {
@@ -1140,6 +1159,19 @@ function ResultsList({
 
   function toggleAll() {
     setExpandedResults(allExpanded ? new Set() : new Set(results.map((result) => result.id)));
+  }
+
+  function toggleGroup(modelName: string, collapsed: boolean) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (collapsed) next.add(modelName);
+      else next.delete(modelName);
+      return next;
+    });
+  }
+
+  function toggleAllGroups() {
+    setCollapsedGroups(allGroupsCollapsed ? new Set() : new Set(modelGroups.map((group) => group.modelName)));
   }
 
   return (
@@ -1155,6 +1187,9 @@ function ResultsList({
           <span className="run-count">
             {completedCount}/{results.length} completed · {modelGroups.length} model{modelGroups.length === 1 ? "" : "s"}
           </span>
+          <button className="quiet-button" onClick={toggleAllGroups} type="button">
+            {allGroupsCollapsed ? "Expand groups" : "Collapse groups"}
+          </button>
           <button className="quiet-button" onClick={toggleAll} type="button">
             {allExpanded ? "Collapse all" : "Expand all"}
           </button>
@@ -1168,10 +1203,12 @@ function ResultsList({
             modelName={group.modelName}
             onDelete={onDelete}
             onReview={onReview}
+            onToggleCollapsed={toggleGroup}
             onToggle={toggleResult}
             openResult={isResultOpen}
             resultNumbers={resultNumbers}
             scoreSummary={group.scoreSummary}
+            collapsed={collapsedGroups.has(group.modelName)}
             items={group.items}
           />
         ))}
@@ -1185,23 +1222,28 @@ function ModelResultGroup({
   modelName,
   onDelete,
   onReview,
+  onToggleCollapsed,
   onToggle,
   openResult,
   resultNumbers,
   scoreSummary,
+  collapsed,
   items,
 }: {
   groupIndex: number;
   modelName: string;
   onDelete: (runId: string, resultId: string) => void;
   onReview: (result: ModelResult, status: HumanStatus) => void;
+  onToggleCollapsed: (modelName: string, collapsed: boolean) => void;
   onToggle: (resultId: string, open: boolean) => void;
   openResult: (resultId: string) => boolean;
   resultNumbers: Map<string, number>;
   scoreSummary: ResultScoreSummary | null;
+  collapsed: boolean;
   items: ConsolidatedItem[];
 }) {
   const completedCount = items.filter((item) => item.result.status === "COMPLETED").length;
+  const resultsId = `model-group-results-${groupIndex}`;
 
   return (
     <section className="model-result-group" aria-labelledby={`model-group-${groupIndex}`}>
@@ -1215,9 +1257,20 @@ function ModelResultGroup({
             {items.length} test{items.length === 1 ? "" : "s"} · {completedCount} completed
           </span>
           <ModelScore summary={scoreSummary} />
+          <button
+            aria-controls={resultsId}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? "Expand" : "Collapse"} ${modelName} results`}
+            className="quiet-button model-group-toggle"
+            onClick={() => onToggleCollapsed(modelName, !collapsed)}
+            type="button"
+          >
+            <span aria-hidden="true">{collapsed ? "＋" : "−"}</span>
+            {collapsed ? "Expand" : "Collapse"}
+          </button>
         </div>
       </header>
-      <div className="model-group-results">
+      <div className="model-group-results" hidden={collapsed} id={resultsId}>
         {items.map((item) => (
           <ResultItem
             key={item.result.id}
@@ -1274,8 +1327,29 @@ function ModelScore({ summary }: { summary: ResultScoreSummary | null }) {
           <strong>{summary.maximum}</strong>
         </span>
       </div>
+      <div className="model-score-ratings">
+        <span className="model-score-ratings-label">Average ratings</span>
+        <div className="model-score-rating-grid">
+          <span className="model-score-rating">
+            <span>Grammar</span>
+            <strong>{formatRatingAverage(summary.averageGrammarRating)}</strong>
+          </span>
+          <span className="model-score-rating">
+            <span>Compliance</span>
+            <strong>{formatRatingAverage(summary.averageComplianceRating)}</strong>
+          </span>
+          <span className="model-score-rating">
+            <span>Accuracy</span>
+            <strong>{formatRatingAverage(summary.averageAccuracyRating)}</strong>
+          </span>
+        </div>
+      </div>
     </div>
   );
+}
+
+function formatRatingAverage(value: number | null) {
+  return value === null ? "--" : `${value.toFixed(2)}/5`;
 }
 
 function ResultItem({
@@ -1323,16 +1397,53 @@ function ResultItem({
         </span>
         <span className={`test-preview${result.responseText ? "" : " placeholder"}`}>
           {result.responseText
-            ? result.outputTokens === null
-              ? "Response captured · open for full text"
-              : `${result.outputTokens} output tokens · open for full text`
+            ? (() => {
+                const lines: [string, string][] = [
+                  ["Tokens", result.outputTokens !== null ? `${result.outputTokens}` : null],
+                  ["TTFT", result.ttftMs !== null ? `${result.ttftMs} ms` : null],
+                  ["Tok/s", result.tokPerSec !== null ? `${result.tokPerSec.toFixed(1)}` : null],
+                  ["Total", result.totalDurationMs !== null ? `${result.totalDurationMs} ms` : null],
+                ].filter(([, v]) => v !== null) as [string, string][];
+                return lines.length > 0
+                  ? lines.map(([label, value], i) => (
+                      <span key={i} className="test-preview-row">
+                        <span className="test-preview-name">{label}</span>
+                        <span>{value}</span>
+                      </span>
+                    ))
+                  : "Response captured";
+              })()
             : statusCopy(result.status)}
         </span>
         <span className="test-score">
-          <span className="stars" aria-label={`${score} out of 5 stars`}>
-            {renderStars(score)}
+          <span className="test-score-row">
+            <span className="test-score-name">Evaluator</span>
+            <span className="stars" aria-label={`${score} out of 5 stars`}>
+              {renderStars(score)}
+            </span>
           </span>
-          <span className="test-score-label">{score ? `${score}/5` : "Not scored"}</span>
+          {result.evaluation ? (
+            <>
+              <span className="test-score-row">
+                <span className="test-score-name">Grammar</span>
+                <span className="stars" aria-label={`Grammar ${result.evaluation.grammarRating ?? "—"} out of 5`}>
+                  {result.evaluation.grammarRating !== null ? renderStars(result.evaluation.grammarRating) : "—"}
+                </span>
+              </span>
+              <span className="test-score-row">
+                <span className="test-score-name">Compliance</span>
+                <span className="stars" aria-label={`Compliance ${result.evaluation.complianceRating ?? "—"} out of 5`}>
+                  {result.evaluation.complianceRating !== null ? renderStars(result.evaluation.complianceRating) : "—"}
+                </span>
+              </span>
+              <span className="test-score-row">
+                <span className="test-score-name">Accuracy</span>
+                <span className="stars" aria-label={`Accuracy ${result.evaluation.accuracyRating ?? "—"} out of 5`}>
+                  {result.evaluation.accuracyRating !== null ? renderStars(result.evaluation.accuracyRating) : "—"}
+                </span>
+              </span>
+            </>
+          ) : null}
         </span>
         <span className={`status test-status ${statusClass}`}>{result.status}</span>
         <span className="test-chevron" aria-hidden="true">
