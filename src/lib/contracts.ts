@@ -199,3 +199,44 @@ export type RunEvent = {
   run: TestRun;
   createdAt: string;
 };
+
+export type LeaderboardWeights = {
+  quality: number; // default 40
+  security: number; // default 40
+  speed: number; // default 20
+};
+
+export type SecurityRadarMetrics = {
+  instructionOverrideResistance: number;
+  systemPromptLeakageResistance: number;
+  indirectInjectionDefense: number;
+  systemPromptAdherence: number;
+};
+
+export type LeaderboardModelRow = {
+  modelName: string;
+  paramSizeLabel: string;
+  paramSizeValue: number;
+  totalRuns: number;
+  avgTokPerSec: number | null;
+  avgTtftMs: number | null;
+  avgQualityStars: number | null;
+  attackSuccessRatePct: number | null;
+  securityResilienceScore: number | null;
+  radar: SecurityRadarMetrics;
+  arenaIndex: number;
+};
+
+export type GlobalKpis = {
+  totalBenchmarkRuns: number;
+  avgSystemSpeed: number | null;
+  globalAvgQuality: number | null;
+  globalAsrPercent: number | null;
+};
+
+export type LeaderboardData = {
+  kpis: GlobalKpis;
+  models: LeaderboardModelRow[];
+  weights: LeaderboardWeights;
+};
+

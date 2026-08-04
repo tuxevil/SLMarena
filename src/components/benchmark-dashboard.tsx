@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Evaluation, HumanStatus, ModelResult, Scenario, SecurityAttackType, TestCategory, TestRun } from "@/lib/contracts";
 import { SECURITY_TEMPLATES } from "@/lib/security-templates";
+import { ConsolidatedDashboard } from "@/components/consolidated-dashboard";
 
 type ModelOption = {
   name: string;
@@ -61,7 +62,7 @@ const DEFAULT_SYSTEM_PROMPT = "You are a precise technical assistant. Explain tr
 const DEFAULT_MESSAGES = ["Compare REST and GraphQL for a small internal service."];
 
 export function BenchmarkDashboard() {
-  const [tab, setTab] = useState<"benchmark" | "settings">("benchmark");
+  const [tab, setTab] = useState<"dashboard" | "benchmark" | "settings">("dashboard");
 
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("");
@@ -514,6 +515,13 @@ export function BenchmarkDashboard() {
           </div>
           <nav className="tab-bar" aria-label="Workspace tabs">
             <button
+              className={tab === "dashboard" ? "tab-button active" : "tab-button"}
+              onClick={() => setTab("dashboard")}
+              type="button"
+            >
+              Dashboard
+            </button>
+            <button
               className={tab === "benchmark" ? "tab-button active" : "tab-button"}
               onClick={() => setTab("benchmark")}
               type="button"
@@ -531,7 +539,11 @@ export function BenchmarkDashboard() {
         </div>
       </header>
 
-      {tab === "benchmark" ? (
+      {tab === "dashboard" ? (
+        <section className="p-4 sm:p-6 bg-slate-950 min-h-screen">
+          <ConsolidatedDashboard activeRun={activeRun} history={history} />
+        </section>
+      ) : tab === "benchmark" ? (
         <div className="workspace">
           <aside className="panel controls" aria-label="Benchmark configuration">
             <div className="controls-header">

@@ -7,6 +7,11 @@ import type {
   Scenario,
   TestRun,
   TurnResult,
+  LeaderboardData,
+  LeaderboardWeights,
+  LeaderboardModelRow,
+  SecurityRadarMetrics,
+  GlobalKpis,
 } from "@/lib/contracts";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 import {
@@ -190,6 +195,266 @@ export async function aggregateScenarioAnalysis(input: {
     models,
     results,
     bestModel: ranked.length > 0 ? { modelName: ranked[0].modelName, averageStars: ranked[0].averageStars! } : null,
+  };
+}
+
+export function extractParamSize(modelName: string): { label: string; value: number } {
+  const normalized = modelName.toLowerCase();
+  
+  if (normalized.includes("qwen-2.5-7b") || normalized.includes("qwen2.5:7b") || normalized.includes("qwen2.5-7b")) return { label: "7.6B", value: 7.6 };
+  if (normalized.includes("llama-3.2-3b") || normalized.includes("llama3.2:3b") || normalized.includes("llama3.2-3b")) return { label: "3.2B", value: 3.2 };
+  if (normalized.includes("phi-3.5-mini") || normalized.includes("phi3.5:mini") || normalized.includes("phi3.5") || normalized.includes("phi-3.5")) return { label: "3.8B", value: 3.8 };
+  if (normalized.includes("gemma2:9b") || normalized.includes("gemma-2-9b")) return { label: "9.0B", value: 9.0 };
+
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*b\b/);
+  if (match) {
+    const val = parseFloat(match[1]);
+    return { label: `${val}B`, value: val };
+  }
+
+  if (normalized.includes("micro") || normalized.includes("nano") || normalized.includes("0.5b") || normalized.includes("1b")) return { label: "1.0B", value: 1.0 };
+  if (normalized.includes("mini") || normalized.includes("3b") || normalized.includes("4b")) return { label: "3.5B", value: 3.5 };
+  if (normalized.includes("small") || normalized.includes("7b") || normalized.includes("8b")) return { label: "7.0B", value: 7.0 };
+  if (normalized.includes("medium") || normalized.includes("13b") || normalized.includes("14b")) return { label: "14.0B", value: 14.0 };
+  if (normalized.includes("large") || normalized.includes("32b") || normalized.includes("33b")) return { label: "32.0B", value: 32.0 };
+  if (normalized.includes("70b")) return { label: "70.0B", value: 70.0 };
+
+  return { label: "3.0B", value: 3.0 };
+}
+
+export async function aggregateLeaderboard(options?: {
+  category?: string;
+  paramRange?: string;
+  weights?: Partial<LeaderboardWeights>;
+}): Promise<LeaderboardData> {
+  const state = await loadPersistedState();
+  const defaultWeights: LeaderboardWeights = {
+    quality: options?.weights?.quality ?? 40,
+    security: options?.weights?.security ?? 40,
+    speed: options?.weights?.speed ?? 20,
+  };
+
+  if (!state || state.runs.length === 0) {
+    return {
+      kpis: {
+        totalBenchmarkRuns: 0,
+        avgSystemSpeed: null,
+        globalAvgQuality: null,
+        globalAsrPercent: null,
+      },
+      models: [],
+      weights: defaultWeights,
+    };
+  }
+
+  let filteredRuns = state.runs;
+  if (options?.category && options.category !== "ALL") {
+    filteredRuns = filteredRuns.filter((r) => r.run.category === options.category);
+  }
+
+  // Gather raw data per model
+  type ModelRawBucket = {
+    modelName: string;
+    runsCount: number;
+    tokPerSecList: number[];
+    ttftMsList: number[];
+    qualityStarsList: number[];
+    complianceRatingList: number[];
+    securityAttacksTotal: number;
+    securityFailuresTotal: number;
+    // Per attack type tracking
+    overrideAttacks: number;
+    overrideFailures: number;
+    leakageAttacks: number;
+    leakageFailures: number;
+    indirectAttacks: number;
+    indirectFailures: number;
+  };
+
+  const byModel = new Map<string, ModelRawBucket>();
+  const allTokPerSec: number[] = [];
+  const allQualityStars: number[] = [];
+  let totalSecurityAttacks = 0;
+  let totalSecurityFailures = 0;
+  const uniqueRunIds = new Set<string>();
+
+  for (const entry of filteredRuns) {
+    uniqueRunIds.add(entry.run.id);
+    for (const res of entry.run.results) {
+      if (res.status !== "COMPLETED") continue;
+
+      const param = extractParamSize(res.modelName);
+      if (options?.paramRange) {
+        if (options.paramRange === "<4B" && param.value >= 4) continue;
+        if (options.paramRange === "4B-8B" && (param.value < 4 || param.value > 8)) continue;
+        if (options.paramRange === ">8B" && param.value <= 8) continue;
+      }
+
+      let bucket = byModel.get(res.modelName);
+      if (!bucket) {
+        bucket = {
+          modelName: res.modelName,
+          runsCount: 0,
+          tokPerSecList: [],
+          ttftMsList: [],
+          qualityStarsList: [],
+          complianceRatingList: [],
+          securityAttacksTotal: 0,
+          securityFailuresTotal: 0,
+          overrideAttacks: 0,
+          overrideFailures: 0,
+          leakageAttacks: 0,
+          leakageFailures: 0,
+          indirectAttacks: 0,
+          indirectFailures: 0,
+        };
+        byModel.set(res.modelName, bucket);
+      }
+
+      bucket.runsCount += 1;
+      if (res.tokPerSec != null) {
+        bucket.tokPerSecList.push(res.tokPerSec);
+        allTokPerSec.push(res.tokPerSec);
+      }
+      if (res.ttftMs != null) bucket.ttftMsList.push(res.ttftMs);
+      if (res.evaluation?.scoreStars != null) {
+        bucket.qualityStarsList.push(res.evaluation.scoreStars);
+        allQualityStars.push(res.evaluation.scoreStars);
+      }
+      if (res.evaluation?.complianceRating != null) {
+        bucket.complianceRatingList.push(res.evaluation.complianceRating);
+      }
+
+      if (res.evaluation?.securityScore != null || entry.run.category === "SECURITY") {
+        const failed = Boolean(res.evaluation?.injectionSuccessful || res.evaluation?.systemLeakageDetected);
+        bucket.securityAttacksTotal += 1;
+        totalSecurityAttacks += 1;
+        if (failed) {
+          bucket.securityFailuresTotal += 1;
+          totalSecurityFailures += 1;
+        }
+
+        const attackType = entry.run.attackType;
+        if (attackType === "INSTRUCTION_OVERRIDE") {
+          bucket.overrideAttacks += 1;
+          if (res.evaluation?.injectionSuccessful) bucket.overrideFailures += 1;
+        } else if (attackType === "SYSTEM_PROMPT_LEAKAGE") {
+          bucket.leakageAttacks += 1;
+          if (res.evaluation?.systemLeakageDetected) bucket.leakageFailures += 1;
+        } else if (attackType === "INDIRECT_PROMPT_INJECTION") {
+          bucket.indirectAttacks += 1;
+          if (res.evaluation?.injectionSuccessful) bucket.indirectFailures += 1;
+        }
+      }
+    }
+  }
+
+  // Calculate max avg speed across models for speed normalization
+  let maxAvgSpeed = 1;
+  const modelAverages: Array<{
+    modelName: string;
+    paramSize: { label: string; value: number };
+    totalRuns: number;
+    avgTokPerSec: number | null;
+    avgTtftMs: number | null;
+    avgQualityStars: number | null;
+    asrPercent: number | null;
+    securityResilienceScore: number | null;
+    radar: SecurityRadarMetrics;
+  }> = [];
+
+  for (const bucket of byModel.values()) {
+    const avgTok = average(bucket.tokPerSecList);
+    if (avgTok !== null && avgTok > maxAvgSpeed) {
+      maxAvgSpeed = avgTok;
+    }
+    const avgTtft = average(bucket.ttftMsList);
+    const avgQuality = average(bucket.qualityStarsList);
+
+    const asr = bucket.securityAttacksTotal > 0
+      ? Number(((bucket.securityFailuresTotal / bucket.securityAttacksTotal) * 100).toFixed(1))
+      : null;
+    const securityResilience = asr !== null ? Number((100 - asr).toFixed(1)) : 100;
+
+    // Radar metrics (0-100)
+    const overrideRes = bucket.overrideAttacks > 0
+      ? Math.max(0, Math.min(100, Math.round(((bucket.overrideAttacks - bucket.overrideFailures) / bucket.overrideAttacks) * 100)))
+      : 100;
+    const leakageRes = bucket.leakageAttacks > 0
+      ? Math.max(0, Math.min(100, Math.round(((bucket.leakageAttacks - bucket.leakageFailures) / bucket.leakageAttacks) * 100)))
+      : 100;
+    const indirectRes = bucket.indirectAttacks > 0
+      ? Math.max(0, Math.min(100, Math.round(((bucket.indirectAttacks - bucket.indirectFailures) / bucket.indirectAttacks) * 100)))
+      : 100;
+
+    const avgCompliance = average(bucket.complianceRatingList);
+    const promptAdherence = avgCompliance !== null
+      ? Math.round((avgCompliance / 5) * 100)
+      : avgQuality !== null
+        ? Math.round((avgQuality / 5) * 100)
+        : 100;
+
+    modelAverages.push({
+      modelName: bucket.modelName,
+      paramSize: extractParamSize(bucket.modelName),
+      totalRuns: bucket.runsCount,
+      avgTokPerSec: avgTok,
+      avgTtftMs: avgTtft,
+      avgQualityStars: avgQuality,
+      asrPercent: asr,
+      securityResilienceScore: securityResilience,
+      radar: {
+        instructionOverrideResistance: overrideRes,
+        systemPromptLeakageResistance: leakageRes,
+        indirectInjectionDefense: indirectRes,
+        systemPromptAdherence: promptAdherence,
+      },
+    });
+  }
+
+  // Calculate Arena Index for each model
+  const totalWeight = defaultWeights.quality + defaultWeights.security + defaultWeights.speed || 100;
+  const wQ = defaultWeights.quality / totalWeight;
+  const wS = defaultWeights.security / totalWeight;
+  const wV = defaultWeights.speed / totalWeight;
+
+  const models: LeaderboardModelRow[] = modelAverages.map((m) => {
+    const qualityScore = m.avgQualityStars !== null ? (m.avgQualityStars / 5) * 100 : 0;
+    const securityScore = m.securityResilienceScore ?? 100;
+    const speedScore = m.avgTokPerSec !== null ? (m.avgTokPerSec / maxAvgSpeed) * 100 : 0;
+
+    const arenaIndex = Math.round((wQ * qualityScore) + (wS * securityScore) + (wV * speedScore));
+
+    return {
+      modelName: m.modelName,
+      paramSizeLabel: m.paramSize.label,
+      paramSizeValue: m.paramSize.value,
+      totalRuns: m.totalRuns,
+      avgTokPerSec: m.avgTokPerSec,
+      avgTtftMs: m.avgTtftMs,
+      avgQualityStars: m.avgQualityStars,
+      attackSuccessRatePct: m.asrPercent,
+      securityResilienceScore: m.securityResilienceScore,
+      radar: m.radar,
+      arenaIndex: Math.min(100, Math.max(0, arenaIndex)),
+    };
+  });
+
+  models.sort((a, b) => b.arenaIndex - a.arenaIndex || (b.avgQualityStars ?? 0) - (a.avgQualityStars ?? 0));
+
+  const kpis: GlobalKpis = {
+    totalBenchmarkRuns: uniqueRunIds.size,
+    avgSystemSpeed: average(allTokPerSec),
+    globalAvgQuality: average(allQualityStars),
+    globalAsrPercent: totalSecurityAttacks > 0
+      ? Number(((totalSecurityFailures / totalSecurityAttacks) * 100).toFixed(1))
+      : null,
+  };
+
+  return {
+    kpis,
+    models,
+    weights: defaultWeights,
   };
 }
 
