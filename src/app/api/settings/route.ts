@@ -21,8 +21,10 @@ export async function PATCH(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid settings.", details: parsed.error.flatten() }, { status: 400 });
   }
-  const endpointError = validateOllamaEndpoint(parsed.data.ollamaUrl);
-  if (endpointError) return NextResponse.json({ error: endpointError }, { status: 400 });
+  if (parsed.data.ollamaUrl) {
+    const endpointError = validateOllamaEndpoint(parsed.data.ollamaUrl);
+    if (endpointError) return NextResponse.json({ error: endpointError }, { status: 400 });
+  }
 
   try {
     return NextResponse.json({ settings: await benchmarkStore.updateSettings(parsed.data) });

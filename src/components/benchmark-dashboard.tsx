@@ -29,10 +29,17 @@ type ModelAggregate = {
   averageTotalDurationMs: number | null;
 };
 
+type ConsolidatedResult = {
+  runId: string;
+  runCreatedAt: string;
+  result: ModelResult;
+};
+
 type ScenarioAnalysis = {
   scenarioKey: string;
   runs: number;
   models: ModelAggregate[];
+  results: ConsolidatedResult[];
   bestModel: { modelName: string; averageStars: number } | null;
 };
 
@@ -42,7 +49,7 @@ type SettingsPayload = {
     evaluatorBaseUrl: string;
     evaluatorModel: string;
     evaluatorApiKeyConfigured: boolean;
-    defaultParameters?: { temperature: number; numCtx: number; topP: number; repeatPenalty: number; numPredict: number };
+    parameters?: { temperature: number; numCtx: number; topP: number; repeatPenalty: number; numPredict: number };
   };
 };
 
@@ -103,6 +110,10 @@ export function BenchmarkDashboard() {
   const [historyModel, setHistoryModel] = useState("");
   const [historyScore, setHistoryScore] = useState("");
   const [notice, setNotice] = useState("");
+  const [analysisRefreshKey, setAnalysisRefreshKey] = useState(0);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  const consolidatedItems = buildConsolidatedItems(analysis?.results ?? [], activeRun);
 
   useEffect(() => {
     void fetch("/api/settings")
@@ -113,13 +124,13 @@ export function BenchmarkDashboard() {
           setEvaluatorBaseUrl(payload.settings.evaluatorBaseUrl);
           setEvaluatorModel(payload.settings.evaluatorModel);
           setEvaluatorKeyConfigured(payload.settings.evaluatorApiKeyConfigured);
-          if (payload.settings.defaultParameters) {
+          if (payload.settings.parameters) {
             setParameters({
-              temperature: String(payload.settings.defaultParameters.temperature),
-              numCtx: String(payload.settings.defaultParameters.numCtx),
-              topP: String(payload.settings.defaultParameters.topP),
-              repeatPenalty: String(payload.settings.defaultParameters.repeatPenalty),
-              numPredict: String(payload.settings.defaultParameters.numPredict),
+              temperature: String(payload.settings.parameters.temperature),
+              numCtx: String(payload.settings.parameters.numCtx),
+              topP: String(payload.settings.parameters.topP),
+              repeatPenalty: String(payload.settings.parameters.repeatPenalty),
+              numPredict: String(payload.settings.parameters.numPredict),
             });
           }
           return;
@@ -165,7 +176,7 @@ export function BenchmarkDashboard() {
         setHistoryTotal(payload.total ?? 0);
       })
       .catch(() => undefined);
-  }, [historyDate, historyFilter, historyModel, historyScore]);
+  }, [historyDate, historyFilter, historyModel, historyScore, historyRefreshKey]);
 
   const scenarioRef = useRef({ selectedScenarioId, systemPrompt, messages });
   useEffect(() => {
@@ -201,7 +212,7 @@ export function BenchmarkDashboard() {
       });
     }, selectedScenarioId ? 0 : 500);
     return () => clearTimeout(timer);
-  }, [selectedScenarioId, systemPrompt, messages]);
+  }, [selectedScenarioId, systemPrompt, messages, analysisRefreshKey]);
 
   function addMessage() {
     setMessages((current) => [...current, ""]);
@@ -387,7 +398,7 @@ export function BenchmarkDashboard() {
           evaluatorModel,
           ...(evaluatorApiKey ? { evaluatorApiKey } : {}),
           clearEvaluatorApiKey,
-          defaultParameters: {
+          parameters: {
             temperature: Number(parameters.temperature),
             numCtx: Number(parameters.numCtx),
             topP: Number(parameters.topP),
@@ -450,41 +461,56 @@ export function BenchmarkDashboard() {
     setHistory((current) => [payload.run!, ...current.filter((item) => item.id !== payload.run!.id)]);
   }
 
+  async function handleDeleteResult(runId: string, resultId: string) {
+    const response = await fetch(`/api/runs/${runId}/results/${resultId}`, { method: "DELETE" });
+    if (!response.ok) {
+      setNotice("Could not delete the sample. It may already be gone.");
+      return;
+    }
+    setActiveRun((current) =>
+      current ? { ...current, results: current.results.filter((result) => result.id !== resultId) } : current,
+    );
+    setAnalysisRefreshKey((key) => key + 1);
+    setHistoryRefreshKey((key) => key + 1);
+  }
+
   const historyModels = [...new Set(history.flatMap((run) => run.models))].sort();
 
   return (
     <main className="shell">
-      <header className="masthead">
-        <div>
-          <p className="eyebrow">Local model quality lab / 01</p>
-          <h1>Compare the answer, not the promise.</h1>
-          <p className="lede">
-            Run identical conversations across your Ollama models, capture the hidden latency story, then let a frontier
-            judge explain what made one answer better.
-          </p>
+      <header className="dashboard-header">
+        <div className="dashboard-brand">
+          <span className="brand-mark" aria-hidden="true">
+            C
+          </span>
+          <div>
+            <p className="eyebrow">Compare / control room</p>
+            <h1>Benchmark workspace</h1>
+          </div>
         </div>
-        <div className="connection-pill">
-          <span className="connection-dot" aria-hidden="true" />
-          Ollama endpoint: {ollamaUrl}
+        <div className="dashboard-header-actions">
+          <div className="connection-pill">
+            <span className="connection-dot" aria-hidden="true" />
+            Ollama: {ollamaUrl}
+          </div>
+          <nav className="tab-bar" aria-label="Workspace tabs">
+            <button
+              className={tab === "benchmark" ? "tab-button active" : "tab-button"}
+              onClick={() => setTab("benchmark")}
+              type="button"
+            >
+              Benchmark
+            </button>
+            <button
+              className={tab === "settings" ? "tab-button active" : "tab-button"}
+              onClick={() => setTab("settings")}
+              type="button"
+            >
+              Settings
+            </button>
+          </nav>
         </div>
       </header>
-
-      <nav className="tab-bar" aria-label="Workspace tabs">
-        <button
-          className={tab === "benchmark" ? "tab-button active" : "tab-button"}
-          onClick={() => setTab("benchmark")}
-          type="button"
-        >
-          Benchmark
-        </button>
-        <button
-          className={tab === "settings" ? "tab-button active" : "tab-button"}
-          onClick={() => setTab("settings")}
-          type="button"
-        >
-          Settings
-        </button>
-      </nav>
 
       {tab === "benchmark" ? (
         <div className="workspace">
@@ -598,7 +624,7 @@ export function BenchmarkDashboard() {
                 </button>
               </div>
               <div className="field">
-                <label htmlFor="samples-per-model">Muestras por modelo (respuestas por ejecución)</label>
+                <label htmlFor="samples-per-model">Samples per model (responses per run)</label>
                 <input
                   className="input"
                   id="samples-per-model"
@@ -668,12 +694,8 @@ export function BenchmarkDashboard() {
                 <span className="run-count">No active run</span>
               )}
             </div>
-            {activeRun ? (
-              <div className="results-grid">
-                {groupResultsByModel(activeRun.results).map(([modelName, results]) => (
-                  <ModelGroup key={modelName} modelName={modelName} onReview={updateReview} results={results} />
-                ))}
-              </div>
+            {consolidatedItems.length > 0 ? (
+              <ResultsList items={consolidatedItems} onDelete={handleDeleteResult} onReview={updateReview} />
             ) : (
               <div className="empty-state">
                 <div>
@@ -796,7 +818,17 @@ export function BenchmarkDashboard() {
                       matchesHistory(run, { keyword: historyFilter, date: historyDate, model: historyModel, score: historyScore }),
                     )
                     .map((run) => (
-                      <button className="history-row" key={run.id} onClick={() => setActiveRun(run)} type="button">
+                      <button
+                        className="history-row"
+                        key={run.id}
+                        onClick={() => {
+                          setActiveRun(run);
+                          if (run.scenarioId && scenarios.some((scenario) => scenario.id === run.scenarioId)) {
+                            loadScenario(run.scenarioId);
+                          }
+                        }}
+                        type="button"
+                      >
                         <span>{new Date(run.createdAt).toLocaleString()}</span>
                         <strong>{run.models.join(", ")}</strong>
                         <span>{run.status}</span>
@@ -995,13 +1027,27 @@ async function fetchScenarioAnalysis(
   return (await response.json()) as ScenarioAnalysis;
 }
 
-function groupResultsByModel(results: ModelResult[]): Array<[string, ModelResult[]]> {  const map = new Map<string, ModelResult[]>();
-  for (const result of results) {
-    const list = map.get(result.modelName) ?? [];
-    list.push(result);
-    map.set(result.modelName, list);
+type ConsolidatedItem = {
+  runId: string;
+  runLabel: string;
+  result: ModelResult;
+};
+
+function buildConsolidatedItems(historical: ConsolidatedResult[], activeRun: TestRun | null): ConsolidatedItem[] {
+  const byId = new Map<string, ConsolidatedItem>();
+  for (const entry of historical) {
+    byId.set(entry.result.id, { runId: entry.runId, runLabel: runDateLabel(entry.runCreatedAt), result: entry.result });
   }
-  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  if (activeRun) {
+    for (const result of activeRun.results) {
+      byId.set(result.id, { runId: activeRun.id, runLabel: runDateLabel(activeRun.createdAt), result });
+    }
+  }
+  return [...byId.values()];
+}
+
+function runDateLabel(timestamp: string) {
+  return new Date(timestamp).toLocaleString();
 }
 
 function clampSamples(value: string) {
@@ -1010,128 +1056,414 @@ function clampSamples(value: string) {
   return Math.min(10, Math.max(1, parsed));
 }
 
-function ModelGroup({
-  modelName,
-  onReview,
-  results,
-}: {
+type ResultScoreSummary = {
+  average: number;
+  minimum: number;
+  maximum: number;
+};
+
+type ResultModelGroup = {
   modelName: string;
+  items: ConsolidatedItem[];
+  scoreSummary: ResultScoreSummary | null;
+};
+
+function groupResultsByModel(results: ConsolidatedItem[]): ResultModelGroup[] {
+  const groups = new Map<string, ConsolidatedItem[]>();
+  for (const item of results) {
+    const group = groups.get(item.result.modelName) ?? [];
+    group.push(item);
+    groups.set(item.result.modelName, group);
+  }
+  return [...groups.entries()]
+    .map(([modelName, groupedItems]) => ({
+      modelName,
+      items: groupedItems,
+      scoreSummary: getResultScoreSummary(groupedItems),
+    }))
+    .sort((groupA, groupB) => {
+      if (groupA.scoreSummary && groupB.scoreSummary) {
+        return groupB.scoreSummary.average - groupA.scoreSummary.average || groupA.modelName.localeCompare(groupB.modelName);
+      }
+      if (groupA.scoreSummary) return -1;
+      if (groupB.scoreSummary) return 1;
+      return groupA.modelName.localeCompare(groupB.modelName);
+    });
+}
+
+function getResultScoreSummary(items: ConsolidatedItem[]): ResultScoreSummary | null {
+  const scores = items
+    .map((item) => item.result.evaluation?.scoreStars)
+    .filter((score): score is number => typeof score === "number");
+  if (scores.length === 0) return null;
+  return {
+    average: scores.reduce((sum, score) => sum + score, 0) / scores.length,
+    minimum: Math.min(...scores),
+    maximum: Math.max(...scores),
+  };
+}
+
+function renderStars(value: number) {
+  const filled = Math.max(0, Math.min(5, Math.round(value)));
+  return "★".repeat(filled) + "☆".repeat(5 - filled);
+}
+
+function ResultsList({
+  items,
+  onDelete,
+  onReview,
+}: {
+  items: ConsolidatedItem[];
+  onDelete: (runId: string, resultId: string) => void;
   onReview: (result: ModelResult, status: HumanStatus) => void;
-  results: ModelResult[];
 }) {
-  const scored = results.filter((result) => result.evaluation?.scoreStars != null);
-  const average = scored.length > 0 ? scored.reduce((sum, result) => sum + (result.evaluation?.scoreStars ?? 0), 0) / scored.length : null;
+  const results = items.map((item) => item.result);
+  const modelGroups = groupResultsByModel(items);
+  const resultNumbers = new Map(results.map((result, index) => [result.id, index + 1]));
+  const [expandedResults, setExpandedResults] = useState<Set<string>>(() => new Set());
+
+  function isResultOpen(resultId: string) {
+    return expandedResults.has(resultId);
+  }
+
+  const completedCount = results.filter((result) => result.status === "COMPLETED").length;
+  const allExpanded = results.length > 0 && results.every((result) => isResultOpen(result.id));
+
+  function toggleResult(resultId: string, open: boolean) {
+    setExpandedResults((current) => {
+      const next = new Set(current);
+      if (open) next.add(resultId);
+      else next.delete(resultId);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setExpandedResults(allExpanded ? new Set() : new Set(results.map((result) => result.id)));
+  }
+
   return (
-    <div className="model-group">
-      <div className="model-group-header">
+    <section className="results-list-shell" aria-label="Benchmark test list">
+      <div className="results-list-head">
         <div>
-          <p className="card-kicker">Local model</p>
-          <h3>{modelName}</h3>
+          <p className="section-label">Test list</p>
+          <p className="results-list-description">
+            Responses are grouped by model across all runs. Open a test to inspect the full answer, telemetry, and review notes.
+          </p>
         </div>
-        <div className="model-group-summary">
-          <span className="run-count">{results.length} sample{results.length === 1 ? "" : "s"}</span>
-          {average !== null ? (
-            <span className="stars" aria-label={`${average.toFixed(1)} average stars`}>
-              {"★".repeat(Math.round(average)) + "☆".repeat(5 - Math.round(average))}
-              <span className="average-label"> {average.toFixed(1)}</span>
-            </span>
-          ) : (
-            <span className="stars">☆☆☆☆☆</span>
-          )}
+        <div className="results-list-actions">
+          <span className="run-count">
+            {completedCount}/{results.length} completed · {modelGroups.length} model{modelGroups.length === 1 ? "" : "s"}
+          </span>
+          <button className="quiet-button" onClick={toggleAll} type="button">
+            {allExpanded ? "Collapse all" : "Expand all"}
+          </button>
         </div>
       </div>
-      <div className="model-group-samples">
-        {results
-          .slice()
-          .sort((a, b) => a.sampleIndex - b.sampleIndex)
-          .map((result) => (
-            <ResultCard
-              key={result.id}
-              onReview={onReview}
-              result={result}
-              sampleLabel={`Sample ${result.sampleIndex + 1}/${results.length}`}
-            />
-          ))}
+      <div className="results-list">
+        {modelGroups.map((group, groupIndex) => (
+          <ModelResultGroup
+            key={group.modelName}
+            groupIndex={groupIndex}
+            modelName={group.modelName}
+            onDelete={onDelete}
+            onReview={onReview}
+            onToggle={toggleResult}
+            openResult={isResultOpen}
+            resultNumbers={resultNumbers}
+            scoreSummary={group.scoreSummary}
+            items={group.items}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ModelResultGroup({
+  groupIndex,
+  modelName,
+  onDelete,
+  onReview,
+  onToggle,
+  openResult,
+  resultNumbers,
+  scoreSummary,
+  items,
+}: {
+  groupIndex: number;
+  modelName: string;
+  onDelete: (runId: string, resultId: string) => void;
+  onReview: (result: ModelResult, status: HumanStatus) => void;
+  onToggle: (resultId: string, open: boolean) => void;
+  openResult: (resultId: string) => boolean;
+  resultNumbers: Map<string, number>;
+  scoreSummary: ResultScoreSummary | null;
+  items: ConsolidatedItem[];
+}) {
+  const completedCount = items.filter((item) => item.result.status === "COMPLETED").length;
+
+  return (
+    <section className="model-result-group" aria-labelledby={`model-group-${groupIndex}`}>
+      <header className="model-group-header">
+        <div className="model-group-identity">
+          <p className="model-group-kicker">Model group</p>
+          <h3 id={`model-group-${groupIndex}`}>{modelName}</h3>
+        </div>
+        <div className="model-group-meta">
+          <span className="run-count">
+            {items.length} test{items.length === 1 ? "" : "s"} · {completedCount} completed
+          </span>
+          <ModelScore summary={scoreSummary} />
+        </div>
+      </header>
+      <div className="model-group-results">
+        {items.map((item) => (
+          <ResultItem
+            key={item.result.id}
+            onDelete={onDelete}
+            onReview={onReview}
+            onToggle={onToggle}
+            open={openResult(item.result.id)}
+            result={item.result}
+            resultNumber={resultNumbers.get(item.result.id) ?? 0}
+            runId={item.runId}
+            runLabel={item.runLabel}
+            sampleLabel={`Sample ${item.result.sampleIndex + 1}`}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ModelScore({ summary }: { summary: ResultScoreSummary | null }) {
+  if (!summary) {
+    return (
+      <div className="model-score model-score-empty">
+        <span>No scores yet</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="model-score"
+      title={`Average ${summary.average.toFixed(1)} / 5 · minimum ${summary.minimum} / 5 · maximum ${summary.maximum} / 5`}
+    >
+      <div className="model-score-primary">
+        <span className="model-score-caption">Average</span>
+        <span className="stars model-score-stars" aria-hidden="true">
+          {renderStars(summary.average)}
+        </span>
+        <strong>{summary.average.toFixed(1)}</strong>
+      </div>
+      <div className="model-score-range">
+        <span className="model-score-range-item">
+          <span>Min</span>
+          <span className="stars" aria-hidden="true">
+            {renderStars(summary.minimum)}
+          </span>
+          <strong>{summary.minimum}</strong>
+        </span>
+        <span className="model-score-range-item">
+          <span>Max</span>
+          <span className="stars" aria-hidden="true">
+            {renderStars(summary.maximum)}
+          </span>
+          <strong>{summary.maximum}</strong>
+        </span>
       </div>
     </div>
   );
 }
 
-function ResultCard({
+function ResultItem({
+  onDelete,
   onReview,
+  onToggle,
+  open,
   result,
+  runId,
+  runLabel,
   sampleLabel,
+  resultNumber,
 }: {
+  onDelete?: (runId: string, resultId: string) => void;
   onReview: (result: ModelResult, status: HumanStatus) => void;
+  onToggle: (resultId: string, open: boolean) => void;
+  open: boolean;
   result: ModelResult;
+  runId?: string;
+  runLabel?: string;
   sampleLabel?: string;
+  resultNumber: number;
 }) {
   const [notes, setNotes] = useState(result.humanNotes);
   const statusClass = result.status.toLowerCase();
   const score = result.evaluation?.scoreStars ?? 0;
+  const detailsId = `result-details-${result.id}`;
+
   return (
-    <article className="result-card">
-      <div className="result-card-top">
-        <div>
-          <p className="card-kicker">{sampleLabel ?? "Local model"}</p>
-          <h3>{result.modelName}</h3>
-        </div>
-        <span className={`status ${statusClass}`}>{result.status}</span>
-      </div>
-      <p className={`response-preview${result.responseText ? "" : " placeholder"}`}>
-        {result.responseText ?? statusCopy(result.status)}
-      </p>
-      <div className="metric-row">
-        <Metric label="TTFT" value={formatMetric(result.ttftMs, "ms")} />
-        <Metric label="Prompt" value={formatMetric(result.inputTokens)} />
-        <Metric label="Output" value={formatMetric(result.outputTokens)} />
-        <Metric label="Tok/s" value={formatMetric(result.tokPerSec)} />
-        <Metric label="Total" value={formatMetric(result.totalDurationMs, "ms")} />
-      </div>
-      <div className="result-card-footer">
-        <span>{result.evalStatus === "SKIPPED" ? "No judge configured" : result.evalStatus}</span>
-        <span className="stars" aria-label={`${score} out of 5 stars`}>
-          {score ? "★".repeat(score) + "☆".repeat(5 - score) : "☆☆☆☆☆"}
+    <details
+      className={`test-item ${statusClass}`}
+      onToggle={(event) => onToggle(result.id, event.currentTarget.open)}
+      open={open}
+    >
+      <summary aria-controls={detailsId} className="test-summary">
+        <span className="test-index" aria-hidden="true">
+          {String(resultNumber).padStart(2, "0")}
         </span>
+        <span className="test-identity">
+          <span className="test-kicker">
+            {sampleLabel ?? "Test"}
+            {runLabel ? ` · run ${runLabel}` : ""} · {evaluationLabel(result.evalStatus)}
+          </span>
+          <strong>{result.modelName}</strong>
+        </span>
+        <span className={`test-preview${result.responseText ? "" : " placeholder"}`}>
+          {result.responseText
+            ? result.outputTokens === null
+              ? "Response captured · open for full text"
+              : `${result.outputTokens} output tokens · open for full text`
+            : statusCopy(result.status)}
+        </span>
+        <span className="test-score">
+          <span className="stars" aria-label={`${score} out of 5 stars`}>
+            {renderStars(score)}
+          </span>
+          <span className="test-score-label">{score ? `${score}/5` : "Not scored"}</span>
+        </span>
+        <span className={`status test-status ${statusClass}`}>{result.status}</span>
+        <span className="test-chevron" aria-hidden="true">
+          ↓
+        </span>
+      </summary>
+
+      <div className="test-details" id={detailsId}>
+        {onDelete && runId ? (
+          <div className="detail-actions">
+            <button
+              className="danger-button"
+              onClick={() => {
+                if (window.confirm(`Delete ${sampleLabel} from ${result.modelName}? This removes it from the results permanently.`)) {
+                  onDelete(runId, result.id);
+                }
+              }}
+              type="button"
+            >
+              Delete sample
+            </button>
+          </div>
+        ) : null}
+        <div className="test-details-main">
+          <section className="detail-section response-section">
+            <div className="detail-section-heading">
+              <div>
+                <p className="section-label">Model response</p>
+                <h3>{result.modelName}</h3>
+              </div>
+              <span className="test-detail-label">
+                {sampleLabel}
+                {runLabel ? ` · run ${runLabel}` : ""}
+              </span>
+            </div>
+            <div className={`response-full${result.responseText ? "" : " placeholder"}`}>
+              {result.responseText ?? statusCopy(result.status)}
+            </div>
+            {result.turns.length > 0 ? (
+              <div className="turn-list">
+                {result.turns.map((turn) => (
+                  <div className="turn-card" key={turn.id}>
+                    <div>
+                      <span className="detail-label">Turn {turn.stepOrder}</span>
+                      <p>{turn.userMessage}</p>
+                    </div>
+                    <div>
+                      <span className="detail-label">Response</span>
+                      <p>{turn.responseText}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="detail-section telemetry-section">
+            <div className="detail-section-heading">
+              <div>
+                <p className="section-label">Run telemetry</p>
+                <h3>How it answered</h3>
+              </div>
+              <span className={`status ${result.evalStatus.toLowerCase()}`}>{result.evalStatus}</span>
+            </div>
+            <div className="detail-metrics">
+              <Metric label="TTFT" value={formatMetric(result.ttftMs, " ms")} />
+              <Metric label="Prompt tokens" value={formatMetric(result.inputTokens)} />
+              <Metric label="Output tokens" value={formatMetric(result.outputTokens)} />
+              <Metric label="Tokens / sec" value={formatMetric(result.tokPerSec)} />
+              <Metric label="Total time" value={formatMetric(result.totalDurationMs, " ms")} />
+            </div>
+          </section>
+        </div>
+
+        {result.evaluation ? (
+          <section className="detail-section evaluation-section">
+            <div className="detail-section-heading">
+              <div>
+                <p className="section-label">Automated review</p>
+                <h3>{result.evaluation.feedbackText}</h3>
+              </div>
+              <span className="stars" aria-label="Automated evaluator score">
+                {renderStars(score)}
+              </span>
+            </div>
+            <div className="rating-grid">
+              <Metric label="Grammar" value={formatRating(result.evaluation.grammarRating)} />
+              <Metric label="Compliance" value={formatRating(result.evaluation.complianceRating)} />
+              <Metric label="Accuracy" value={formatRating(result.evaluation.accuracyRating)} />
+            </div>
+            <div className="evaluation-copy">
+              <span>Grammar: {result.evaluation.grammarAnalysis}</span>
+              <span>Instruction fit: {result.evaluation.complianceAnalysis}</span>
+              <span>Accuracy: {result.evaluation.accuracyAnalysis}</span>
+            </div>
+          </section>
+        ) : null}
+
+        {result.errorMessage ? <div className="notice">{result.errorMessage}</div> : null}
+
+        {result.status === "COMPLETED" ? (
+          <section className="detail-section review-section">
+            <div className="detail-section-heading">
+              <div>
+                <p className="section-label">Human review</p>
+                <h3>Would you keep this answer?</h3>
+              </div>
+              <span className="run-count">Current: {result.humanStatus}</span>
+            </div>
+            <textarea
+              aria-label={`Human notes for ${result.modelName}`}
+              className="review-notes"
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Add a note for the final decision..."
+              value={notes}
+            />
+            <div className="review-actions">
+              <button className="quiet-button" onClick={() => onReview({ ...result, humanNotes: notes }, "APPROVED")} type="button">
+                Approve
+              </button>
+              <button className="quiet-button" onClick={() => onReview({ ...result, humanNotes: notes }, "REJECTED")} type="button">
+                Reject
+              </button>
+              <button className="quiet-button" onClick={() => onReview({ ...result, humanNotes: notes }, "REVIEWED")} type="button">
+                Reviewed
+              </button>
+            </div>
+          </section>
+        ) : null}
       </div>
-      {result.evaluation ? (
-        <div className="evaluation-note">
-          <strong>{result.evaluation.feedbackText}</strong>
-          <div className="rating-grid">
-            <Metric label="Grammar" value={formatRating(result.evaluation.grammarRating)} />
-            <Metric label="Compliance" value={formatRating(result.evaluation.complianceRating)} />
-            <Metric label="Accuracy" value={formatRating(result.evaluation.accuracyRating)} />
-          </div>
-          <span>Grammar: {result.evaluation.grammarAnalysis}</span>
-          <span>Instruction fit: {result.evaluation.complianceAnalysis}</span>
-          <span>Accuracy: {result.evaluation.accuracyAnalysis}</span>
-        </div>
-      ) : null}
-      {result.errorMessage ? <div className="notice">{result.errorMessage}</div> : null}
-      {result.status === "COMPLETED" ? (
-        <div>
-          <textarea
-            aria-label={`Human notes for ${result.modelName}`}
-            className="review-notes"
-            onChange={(event) => setNotes(event.target.value)}
-            placeholder="Final human feedback..."
-            value={notes}
-          />
-          <div className="review-actions">
-            <button className="quiet-button" onClick={() => onReview({ ...result, humanNotes: notes }, "APPROVED")} type="button">
-              Approve
-            </button>
-            <button className="quiet-button" onClick={() => onReview({ ...result, humanNotes: notes }, "REJECTED")} type="button">
-              Reject
-            </button>
-            <button className="quiet-button" onClick={() => onReview({ ...result, humanNotes: notes }, "REVIEWED")} type="button">
-              Reviewed
-            </button>
-            <span className="run-count">{result.humanStatus}</span>
-          </div>
-        </div>
-      ) : null}
-    </article>
+    </details>
   );
 }
 
@@ -1150,6 +1482,21 @@ function formatMetric(value: number | null, suffix = "") {
 
 function formatRating(value: number | null) {
   return value === null ? "--/5" : `${value}/5`;
+}
+
+function evaluationLabel(status: ModelResult["evalStatus"]) {
+  switch (status) {
+    case "PENDING":
+      return "Waiting for judge";
+    case "RUNNING":
+      return "Judge running";
+    case "COMPLETED":
+      return "Evaluated";
+    case "FAILED":
+      return "Judge failed";
+    default:
+      return "No judge";
+  }
 }
 
 function statusCopy(status: ModelResult["status"]) {

@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { createRunSchema } from "./contracts";
+import { createRunSchema, settingsUpdateSchema } from "./contracts";
+
+describe("settingsUpdateSchema", () => {
+  it("accepts a partial patch without clobbering fields that were not sent", () => {
+    const parsed = settingsUpdateSchema.safeParse({
+      ollamaUrl: "http://localhost:11434",
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.ollamaUrl).toBe("http://localhost:11434");
+    expect(parsed.data?.parameters).toBeUndefined();
+    expect(parsed.data?.evaluatorBaseUrl).toBeUndefined();
+  });
+
+  it("accepts the full settings payload", () => {
+    const parsed = settingsUpdateSchema.safeParse({
+      ollamaUrl: "http://localhost:11434",
+      evaluatorBaseUrl: "https://judge.example/v1",
+      evaluatorModel: "judge",
+      clearEvaluatorApiKey: false,
+      parameters: { temperature: 0.2, numCtx: 16384, topP: 0.9, repeatPenalty: 1.1, numPredict: 16384 },
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.parameters?.numCtx).toBe(16384);
+  });
+});
+
 
 describe("createRunSchema", () => {
   it("accepts a benchmark with HTTP endpoints and bounded parameters", () => {

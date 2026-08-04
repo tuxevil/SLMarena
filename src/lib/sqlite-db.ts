@@ -204,6 +204,13 @@ export function sqlitePersistHumanReview(resultId: string, status: string, notes
   `).run(status, notes, resultId);
 }
 
+export function sqliteDeleteResult(runId: string, resultId: string): boolean {
+  const result = getSqliteDb()
+    .prepare("DELETE FROM model_results WHERE id = ? AND test_run_id = ?")
+    .run(resultId, runId);
+  return result.changes > 0;
+}
+
 export function sqliteLoadSettings(): {
   ollamaUrl: string;
   evaluatorBaseUrl: string;

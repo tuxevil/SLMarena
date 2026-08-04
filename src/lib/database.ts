@@ -10,6 +10,7 @@ import type {
 } from "@/lib/contracts";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 import {
+  sqliteDeleteResult,
   sqliteDeleteScenario,
   sqliteLoadSettings,
   sqliteLoadState,
@@ -51,10 +52,17 @@ export type ModelAggregate = {
   averageTotalDurationMs: number | null;
 };
 
+export type ConsolidatedResult = {
+  runId: string;
+  runCreatedAt: string;
+  result: ModelResult;
+};
+
 export type ScenarioAnalysis = {
   scenarioKey: string;
   runs: number;
   models: ModelAggregate[];
+  results: ConsolidatedResult[];
   bestModel: { modelName: string; averageStars: number } | null;
 };
 
@@ -86,7 +94,7 @@ export async function aggregateScenarioAnalysis(input: {
   userMessages: string[];
 }): Promise<ScenarioAnalysis> {
   const state = await loadPersistedState();
-  if (!state) return { scenarioKey: "", runs: 0, models: [], bestModel: null };
+  if (!state) return { scenarioKey: "", runs: 0, models: [], results: [], bestModel: null };
 
   const key = scenarioKeyFor(input);
   const runs = state.runs.filter((entry) => scenarioKeyFor(entry.run) === key);
@@ -129,10 +137,21 @@ export async function aggregateScenarioAnalysis(input: {
   });
 
   const ranked = models.filter((model) => model.averageStars !== null);
+  const results: ConsolidatedResult[] = runs
+    .flatMap((entry) =>
+      entry.run.results.map((result) => ({
+        runId: entry.run.id,
+        runCreatedAt: entry.run.createdAt,
+        result,
+      })),
+    )
+    .sort((a, b) => a.runCreatedAt.localeCompare(b.runCreatedAt) || a.result.modelName.localeCompare(b.result.modelName) || a.result.sampleIndex - b.result.sampleIndex);
+
   return {
     scenarioKey: key,
     runs: runs.length,
     models,
+    results,
     bestModel: ranked.length > 0 ? { modelName: ranked[0].modelName, averageStars: ranked[0].averageStars! } : null,
   };
 }
@@ -193,6 +212,18 @@ export async function persistHumanReview(resultId: string, status: string, notes
     SET human_status = ${status}, human_notes = ${notes}
     WHERE id = ${resultId}
   `;
+}
+
+export async function deletePersistedResult(runId: string, resultId: string): Promise<boolean> {
+  if (!isPostgres()) {
+    return sqliteDeleteResult(runId, resultId);
+  }
+  const sql = getClient()!;
+  const [deleted] = await sql`
+    DELETE FROM model_results WHERE id = ${resultId} AND test_run_id = ${runId}
+    RETURNING id
+  `;
+  return Boolean(deleted);
 }
 
 export async function loadPersistedSettings(): Promise<PersistedSettings | null> {

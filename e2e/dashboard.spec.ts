@@ -23,6 +23,45 @@ const completedRun = createRun("COMPLETED", {
     rawJson: {},
   },
 });
+completedRun.samplesPerModel = 2;
+completedRun.results.push({
+  ...completedRun.results[0],
+  id: "result-2",
+  sampleIndex: 1,
+  responseText: "GraphQL adds flexibility for clients.",
+  evaluation: {
+    evaluatorModel: "judge",
+    grammarRating: 3,
+    complianceRating: 3,
+    accuracyRating: 3,
+    scoreStars: 3,
+    grammarAnalysis: "Readable.",
+    complianceAnalysis: "Mostly followed the prompt.",
+    accuracyAnalysis: "Accurate enough.",
+    feedbackText: "Solid answer.",
+    rawJson: {},
+  },
+});
+completedRun.models = ["llama3.2", "qwen2.5"];
+completedRun.results.push({
+  ...completedRun.results[0],
+  id: "result-3",
+  modelName: "qwen2.5",
+  sampleIndex: 0,
+  responseText: "Qwen gives a shorter comparison.",
+  evaluation: {
+    evaluatorModel: "judge",
+    grammarRating: 2,
+    complianceRating: 2,
+    accuracyRating: 2,
+    scoreStars: 2,
+    grammarAnalysis: "Needs polish.",
+    complianceAnalysis: "Missed some detail.",
+    accuracyAnalysis: "Partially accurate.",
+    feedbackText: "Needs another pass.",
+    rawJson: {},
+  },
+});
 
 test.beforeEach(async ({ page }) => {
   await page.route(/\/api\/settings/, async (route) => {
@@ -46,6 +85,7 @@ test.beforeEach(async ({ page }) => {
     await route.fulfill({ json: {
       scenarioKey: "scenario:scenario-1",
       runs: 2,
+      results: [],
       bestModel: { modelName: "llama3.2", averageStars: 4.5 },
       models: [{
         modelName: "llama3.2",
@@ -77,19 +117,75 @@ test.beforeEach(async ({ page }) => {
       body: `data: ${snapshot}\n\ndata: ${completed}\n\n`,
     });
   });
+  await page.route(/\/api\/runs\/run-1\/results\/.+/, async (route) => {
+    if (route.request().method() !== "DELETE") return route.continue();
+    await route.fulfill({ status: 204 });
+  });
 });
 
 test("runs a benchmark and renders progressive evaluation", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Compare the answer, not the promise." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Benchmark workspace" })).toBeVisible();
   await page.getByRole("button", { name: /Discover models/ }).click();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Start benchmark" }).click();
 
+  const resultList = page.getByRole("region", { name: "Benchmark test list" });
+  await expect(resultList.getByRole("button", { name: "Expand all" })).toBeVisible();
+  await expect(resultList.locator(".response-full").first()).toBeHidden();
+  await resultList.getByRole("button", { name: "Expand all" }).click();
   await expect(page.getByText("REST is simpler for this internal service.")).toBeVisible();
   await expect(page.getByLabel("5 out of 5 stars")).toBeVisible();
   await expect(page.getByText("Grammar: Clean.")).toBeVisible();
-  await expect(page.getByText("Compliance")).toBeVisible();
+  await expect(page.locator(".test-item").first().getByText("Compliance")).toBeVisible();
+});
+
+test("keeps each benchmark result in a collapsible test row", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Discover models/ }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Start benchmark" }).click();
+
+  const resultList = page.getByRole("region", { name: "Benchmark test list" });
+  await expect(resultList.locator(".model-result-group")).toHaveCount(2);
+  await expect(resultList.locator(".model-result-group").nth(0).locator(".model-group-header h3")).toHaveText("llama3.2");
+  await expect(resultList.locator(".model-result-group").nth(1).locator(".model-group-header h3")).toHaveText("qwen2.5");
+  await expect(resultList.locator(".model-score")).toHaveCount(2);
+  await expect(resultList.locator(".model-score").first()).toBeVisible();
+  await expect(resultList.locator(".model-score").first()).toContainText("4.0");
+  await expect(resultList.locator(".model-score").first()).toContainText("Min");
+  await expect(resultList.locator(".model-score").first()).toContainText("Max");
+  await expect(resultList.locator("details.test-item")).toHaveCount(3);
+  await expect(resultList.getByRole("button", { name: "Expand all" })).toBeVisible();
+  await expect(resultList.locator(".response-full").first()).toBeHidden();
+  await resultList.getByRole("button", { name: "Expand all" }).click();
+  await resultList.getByRole("button", { name: "Collapse all" }).click();
+  await expect(resultList.getByRole("button", { name: "Expand all" })).toBeVisible();
+  await expect(resultList.locator(".response-full").first()).toBeHidden();
+  await expect(resultList.locator(".response-full").nth(1)).toBeHidden();
+  await expect(resultList.locator(".response-full").nth(2)).toBeHidden();
+  await resultList.getByRole("button", { name: "Expand all" }).click();
+  await expect(resultList.locator(".response-full").first()).toBeVisible();
+  await expect(resultList.locator(".response-full").nth(1)).toBeVisible();
+  await expect(resultList.locator(".response-full").nth(2)).toBeVisible();
+});
+
+test("deletes a sample from the consolidated results", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Discover models/ }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Start benchmark" }).click();
+
+  const resultList = page.getByRole("region", { name: "Benchmark test list" });
+  await expect(resultList.locator("details.test-item")).toHaveCount(3);
+  await resultList.getByRole("button", { name: "Expand all" }).click();
+  await expect(resultList.getByRole("button", { name: "Delete sample" })).toHaveCount(3);
+
+  page.once("dialog", (dialog) => void dialog.accept());
+  await resultList.getByRole("button", { name: "Delete sample" }).first().click();
+
+  await expect(resultList.locator("details.test-item")).toHaveCount(2);
+  await expect(resultList.getByRole("button", { name: "Delete sample" })).toHaveCount(2);
 });
 
 test("saves global settings and exposes scenario controls", async ({ page }) => {

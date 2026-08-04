@@ -10,6 +10,7 @@ import type {
   TurnResult,
 } from "@/lib/contracts";
 import {
+  deletePersistedResult,
   loadPersistedSettings,
   loadPersistedState,
   queuePersistedRun,
@@ -127,17 +128,17 @@ export const benchmarkStore = {
   },
 
   async updateSettings(input: {
-    ollamaUrl: string;
-    evaluatorBaseUrl: string;
-    evaluatorModel: string;
+    ollamaUrl?: string;
+    evaluatorBaseUrl?: string;
+    evaluatorModel?: string;
     evaluatorApiKey?: string;
     clearEvaluatorApiKey: boolean;
     parameters?: import("@/lib/contracts").BenchmarkParameters;
   }) {
     const nextSettings: PersistedSettings = {
-      ollamaUrl: input.ollamaUrl,
-      evaluatorBaseUrl: input.evaluatorBaseUrl,
-      evaluatorModel: input.evaluatorModel,
+      ollamaUrl: input.ollamaUrl ?? state.settings.ollamaUrl,
+      evaluatorBaseUrl: input.evaluatorBaseUrl ?? state.settings.evaluatorBaseUrl,
+      evaluatorModel: input.evaluatorModel ?? state.settings.evaluatorModel,
       evaluatorApiKey: input.clearEvaluatorApiKey
         ? null
         : input.evaluatorApiKey?.trim()
@@ -294,6 +295,17 @@ export const benchmarkStore = {
     }
     emit(run, "run.cancelled");
     return snapshot(run);
+  },
+
+  async deleteResult(id: string, resultId: string) {
+    const run = state.runs.get(id);
+    if (!run) return false;
+    const index = run.results.findIndex((result) => result.id === resultId);
+    if (index === -1) return false;
+    run.results.splice(index, 1);
+    emit(run, "run.updated");
+    await deletePersistedResult(id, resultId);
+    return true;
   },
 
   subscribe(id: string, listener: RunListener) {

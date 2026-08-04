@@ -41,12 +41,14 @@ export const humanReviewSchema = z.object({
 });
 
 export const settingsUpdateSchema = z.object({
-  ollamaUrl: httpUrlSchema,
-  evaluatorBaseUrl: z.union([
-    z.literal(""),
-    httpUrlSchema.refine((value) => !validateEvaluatorEndpoint(value), "Evaluator endpoint must use HTTPS unless local."),
-  ]),
-  evaluatorModel: z.string().trim().max(255),
+  ollamaUrl: httpUrlSchema.optional(),
+  evaluatorBaseUrl: z
+    .union([
+      z.literal(""),
+      httpUrlSchema.refine((value) => !validateEvaluatorEndpoint(value), "Evaluator endpoint must use HTTPS unless local."),
+    ])
+    .optional(),
+  evaluatorModel: z.string().trim().max(255).optional(),
   evaluatorApiKey: z
     .string()
     .max(4_096)
