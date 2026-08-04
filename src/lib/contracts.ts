@@ -6,6 +6,16 @@ export const httpUrlSchema = z
   .url()
   .refine((value) => value.startsWith("http://") || value.startsWith("https://"), "URL must use HTTP or HTTPS.");
 
+export const testCategorySchema = z.enum(["GENERAL", "SECURITY"]);
+export const securityAttackTypeSchema = z.enum([
+  "INSTRUCTION_OVERRIDE",
+  "SYSTEM_PROMPT_LEAKAGE",
+  "INDIRECT_PROMPT_INJECTION",
+]);
+
+export type TestCategory = z.infer<typeof testCategorySchema>;
+export type SecurityAttackType = z.infer<typeof securityAttackTypeSchema>;
+
 export const benchmarkParametersSchema = z.object({
   temperature: z.number().min(0).max(2),
   numCtx: z.number().int().min(128).max(131_072),
@@ -20,20 +30,30 @@ export const evaluatorConfigSchema = z.object({
   model: z.string().trim().min(1).max(255),
 });
 
-export const createRunSchema = z.object({
-  ollamaUrl: httpUrlSchema,
-  scenarioId: z.string().uuid().nullable().optional(),
-  samplesPerModel: z.number().int().min(1).max(10).default(1),
-  systemPrompt: z.string().trim().min(1).max(50_000),
-  userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
-  models: z
-    .array(z.string().trim().min(1).max(255))
-    .min(1)
-    .max(50)
-    .refine((models) => new Set(models).size === models.length, "Models must be unique."),
-  parameters: benchmarkParametersSchema,
-  evaluator: evaluatorConfigSchema.optional(),
-});
+export const createRunSchema = z
+  .object({
+    ollamaUrl: httpUrlSchema,
+    scenarioId: z.string().uuid().nullable().optional(),
+    samplesPerModel: z.number().int().min(1).max(10).default(1),
+    category: testCategorySchema.default("GENERAL"),
+    attackType: securityAttackTypeSchema.nullable().optional(),
+    systemPrompt: z.string().trim().min(1).max(50_000),
+    userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
+    models: z
+      .array(z.string().trim().min(1).max(255))
+      .min(1)
+      .max(50)
+      .refine((models) => new Set(models).size === models.length, "Models must be unique."),
+    parameters: benchmarkParametersSchema,
+    evaluator: evaluatorConfigSchema.optional(),
+  })
+  .refine(
+    (data) => data.category !== "SECURITY" || Boolean(data.attackType),
+    {
+      message: "An attack type must be specified for security tests.",
+      path: ["attackType"],
+    }
+  );
 
 export const humanReviewSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED", "REVIEWED", "UNREVIEWED"]),
@@ -90,11 +110,15 @@ export type Evaluation = {
   complianceRating: number | null;
   accuracyRating: number | null;
   scoreStars: number | null;
-  grammarAnalysis: string;
-  complianceAnalysis: string;
-  accuracyAnalysis: string;
+  grammarAnalysis: string | null;
+  complianceAnalysis: string | null;
+  accuracyAnalysis: string | null;
   feedbackText: string;
   rawJson: unknown;
+  securityScore: number | null;
+  injectionSuccessful: boolean | null;
+  systemLeakageDetected: boolean | null;
+  vulnerabilityAnalysis: string | null;
 };
 
 export type ModelResult = Telemetry & {
@@ -113,6 +137,8 @@ export type ModelResult = Telemetry & {
 
 export type TestRun = {
   id: string;
+  category: TestCategory;
+  attackType: SecurityAttackType | null;
   status: RunStatus;
   paused: boolean;
   controlVersion: number;
@@ -141,17 +167,29 @@ export type AppSettings = {
 export type Scenario = {
   id: string;
   name: string;
+  category: TestCategory;
+  attackType: SecurityAttackType | null;
   systemPrompt: string;
   userMessages: string[];
   createdAt: string;
   updatedAt: string;
 };
 
-export const scenarioSchema = z.object({
-  name: z.string().trim().min(1).max(255),
-  systemPrompt: z.string().trim().min(1).max(50_000),
-  userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
-});
+export const scenarioSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255),
+    category: testCategorySchema.default("GENERAL"),
+    attackType: securityAttackTypeSchema.nullish().transform((v) => v ?? null),
+    systemPrompt: z.string().trim().min(1).max(50_000),
+    userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
+  })
+  .refine(
+    (data) => data.category !== "SECURITY" || Boolean(data.attackType),
+    {
+      message: "An attack type must be specified for security scenarios.",
+      path: ["attackType"],
+    }
+  );
 
 export type ScenarioInput = z.infer<typeof scenarioSchema>;
 

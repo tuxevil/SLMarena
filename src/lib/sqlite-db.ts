@@ -18,7 +18,7 @@ let dbInstance: Database.Database | null = null;
 
 export function getSqliteDb(): Database.Database {
   if (!dbInstance) {
-    const dbPath = process.env.SQLITE_PATH?.trim() || path.join(process.cwd(), "slmarena.db");
+    const dbPath = process.env.SQLITE_PATH?.trim() || path.join(process.cwd(), "compare.db");
     dbInstance = new Database(dbPath);
     dbInstance.pragma("journal_mode = WAL");
     dbInstance.pragma("foreign_keys = ON");
@@ -42,6 +42,8 @@ function initSqliteTables(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS scenarios (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'GENERAL',
+      attack_type TEXT,
       system_prompt TEXT NOT NULL,
       user_messages TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -50,6 +52,8 @@ function initSqliteTables(db: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS test_runs (
       id TEXT PRIMARY KEY,
+      category TEXT NOT NULL DEFAULT 'GENERAL',
+      attack_type TEXT,
       status TEXT NOT NULL,
       paused INTEGER NOT NULL DEFAULT 0,
       control_version INTEGER NOT NULL DEFAULT 1,
@@ -106,14 +110,18 @@ function initSqliteTables(db: Database.Database) {
       id TEXT PRIMARY KEY,
       model_result_id TEXT UNIQUE NOT NULL,
       evaluator_model TEXT NOT NULL,
-      grammar_rating INTEGER NOT NULL,
-      compliance_rating INTEGER NOT NULL,
-      accuracy_rating INTEGER NOT NULL,
+      grammar_rating INTEGER,
+      compliance_rating INTEGER,
+      accuracy_rating INTEGER,
       score_stars INTEGER NOT NULL,
       grammar_analysis TEXT,
       compliance_analysis TEXT,
       accuracy_analysis TEXT,
       feedback_text TEXT,
+      security_score INTEGER,
+      injection_successful INTEGER,
+      system_leakage_detected INTEGER,
+      vulnerability_analysis TEXT,
       evaluator_raw_json TEXT NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY(model_result_id) REFERENCES model_results(id) ON DELETE CASCADE
@@ -132,6 +140,79 @@ function initSqliteTables(db: Database.Database) {
   }
   if (!runColumns.some((column) => column.name === "samples_per_model")) {
     migrationDb.exec("ALTER TABLE test_runs ADD COLUMN samples_per_model INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!runColumns.some((column) => column.name === "category")) {
+    migrationDb.exec("ALTER TABLE test_runs ADD COLUMN category TEXT NOT NULL DEFAULT 'GENERAL'");
+  }
+  if (!runColumns.some((column) => column.name === "attack_type")) {
+    migrationDb.exec("ALTER TABLE test_runs ADD COLUMN attack_type TEXT");
+  }
+
+  const scenarioColumns = migrationDb.prepare("PRAGMA table_info(scenarios)").all() as SqlRow[];
+  if (!scenarioColumns.some((column) => column.name === "category")) {
+    migrationDb.exec("ALTER TABLE scenarios ADD COLUMN category TEXT NOT NULL DEFAULT 'GENERAL'");
+  }
+  if (!scenarioColumns.some((column) => column.name === "attack_type")) {
+    migrationDb.exec("ALTER TABLE scenarios ADD COLUMN attack_type TEXT");
+  }
+
+  const evalColumns = migrationDb.prepare("PRAGMA table_info(evaluations)").all() as SqlRow[];
+  const grammarCol = evalColumns.find((column) => column.name === "grammar_rating");
+  if (grammarCol && Number(grammarCol.notnull) === 1) {
+    migrationDb.transaction(() => {
+      migrationDb.exec("PRAGMA foreign_keys=OFF;");
+      migrationDb.exec(`
+        CREATE TABLE evaluations_new (
+          id TEXT PRIMARY KEY,
+          model_result_id TEXT UNIQUE NOT NULL,
+          evaluator_model TEXT NOT NULL,
+          grammar_rating INTEGER,
+          compliance_rating INTEGER,
+          accuracy_rating INTEGER,
+          score_stars INTEGER NOT NULL,
+          grammar_analysis TEXT,
+          compliance_analysis TEXT,
+          accuracy_analysis TEXT,
+          feedback_text TEXT,
+          security_score INTEGER,
+          injection_successful INTEGER,
+          system_leakage_detected INTEGER,
+          vulnerability_analysis TEXT,
+          evaluator_raw_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY(model_result_id) REFERENCES model_results(id) ON DELETE CASCADE
+        );
+      `);
+      migrationDb.exec(`
+        INSERT INTO evaluations_new (
+          id, model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating,
+          score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text,
+          security_score, injection_successful, system_leakage_detected, vulnerability_analysis,
+          evaluator_raw_json, created_at
+        )
+        SELECT 
+          id, model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating,
+          score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text,
+          security_score, injection_successful, system_leakage_detected, vulnerability_analysis,
+          evaluator_raw_json, created_at
+        FROM evaluations;
+      `);
+      migrationDb.exec("DROP TABLE evaluations;");
+      migrationDb.exec("ALTER TABLE evaluations_new RENAME TO evaluations;");
+      migrationDb.exec("PRAGMA foreign_keys=ON;");
+    })();
+  }
+  if (!evalColumns.some((column) => column.name === "security_score")) {
+    migrationDb.exec("ALTER TABLE evaluations ADD COLUMN security_score INTEGER");
+  }
+  if (!evalColumns.some((column) => column.name === "injection_successful")) {
+    migrationDb.exec("ALTER TABLE evaluations ADD COLUMN injection_successful INTEGER");
+  }
+  if (!evalColumns.some((column) => column.name === "system_leakage_detected")) {
+    migrationDb.exec("ALTER TABLE evaluations ADD COLUMN system_leakage_detected INTEGER");
+  }
+  if (!evalColumns.some((column) => column.name === "vulnerability_analysis")) {
+    migrationDb.exec("ALTER TABLE evaluations ADD COLUMN vulnerability_analysis TEXT");
   }
 
   const resultColumns = migrationDb.prepare("PRAGMA table_info(model_results)").all() as SqlRow[];
@@ -175,16 +256,20 @@ function initSqliteTables(db: Database.Database) {
 export function sqlitePersistScenario(scenario: Scenario) {
   const db = getSqliteDb();
   db.prepare(`
-    INSERT INTO scenarios (id, name, system_prompt, user_messages, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO scenarios (id, name, category, attack_type, system_prompt, user_messages, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
+      category = excluded.category,
+      attack_type = excluded.attack_type,
       system_prompt = excluded.system_prompt,
       user_messages = excluded.user_messages,
       updated_at = excluded.updated_at
   `).run(
     scenario.id,
     scenario.name,
+    scenario.category ?? "GENERAL",
+    scenario.attackType ?? null,
     scenario.systemPrompt,
     JSON.stringify(scenario.userMessages),
     scenario.createdAt,
@@ -297,9 +382,11 @@ export function sqlitePersistRun(
 
   const transaction = db.transaction(() => {
     db.prepare(`
-      INSERT INTO test_runs (id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        category = excluded.category,
+        attack_type = excluded.attack_type,
         status = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.status ELSE test_runs.status END,
         paused = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.paused ELSE test_runs.paused END,
         control_version = MAX(test_runs.control_version, excluded.control_version),
@@ -316,6 +403,8 @@ export function sqlitePersistRun(
         error_message = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.error_message ELSE test_runs.error_message END
     `).run(
       run.id,
+      run.category ?? "GENERAL",
+      run.attackType ?? null,
       run.status,
       run.paused ? 1 : 0,
       run.controlVersion,
@@ -395,8 +484,8 @@ export function sqlitePersistRun(
 
       if (result.evaluation) {
         db.prepare(`
-          INSERT INTO evaluations (id, model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, evaluator_raw_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO evaluations (id, model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, security_score, injection_successful, system_leakage_detected, vulnerability_analysis, evaluator_raw_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(model_result_id) DO UPDATE SET
             evaluator_model = excluded.evaluator_model,
             grammar_rating = excluded.grammar_rating,
@@ -407,6 +496,10 @@ export function sqlitePersistRun(
             compliance_analysis = excluded.compliance_analysis,
             accuracy_analysis = excluded.accuracy_analysis,
             feedback_text = excluded.feedback_text,
+            security_score = excluded.security_score,
+            injection_successful = excluded.injection_successful,
+            system_leakage_detected = excluded.system_leakage_detected,
+            vulnerability_analysis = excluded.vulnerability_analysis,
             evaluator_raw_json = excluded.evaluator_raw_json
         `).run(
           crypto.randomUUID(),
@@ -420,6 +513,18 @@ export function sqlitePersistRun(
           result.evaluation.complianceAnalysis,
           result.evaluation.accuracyAnalysis,
           result.evaluation.feedbackText,
+          result.evaluation.securityScore ?? null,
+          result.evaluation.injectionSuccessful === null || result.evaluation.injectionSuccessful === undefined
+            ? null
+            : result.evaluation.injectionSuccessful
+              ? 1
+              : 0,
+          result.evaluation.systemLeakageDetected === null || result.evaluation.systemLeakageDetected === undefined
+            ? null
+            : result.evaluation.systemLeakageDetected
+              ? 1
+              : 0,
+          result.evaluation.vulnerabilityAnalysis ?? null,
           JSON.stringify(result.evaluation.rawJson),
           run.createdAt,
         );
@@ -497,7 +602,11 @@ export function sqliteLoadState(targetRunId?: string) {
       complianceAnalysis: String(row.compliance_analysis || ""),
       accuracyAnalysis: String(row.accuracy_analysis || ""),
       feedbackText: String(row.feedback_text || ""),
-      rawJson: row.evaluator_raw_json ? JSON.parse(String(row.evaluator_raw_json)) : null,
+      securityScore: row.security_score !== null && row.security_score !== undefined ? Number(row.security_score) : null,
+      injectionSuccessful: row.injection_successful !== null && row.injection_successful !== undefined ? Boolean(row.injection_successful) : null,
+      systemLeakageDetected: row.system_leakage_detected !== null && row.system_leakage_detected !== undefined ? Boolean(row.system_leakage_detected) : null,
+      vulnerabilityAnalysis: row.vulnerability_analysis ? String(row.vulnerability_analysis) : null,
+      rawJson: safeJsonParse(row.evaluator_raw_json),
     });
   }
 
@@ -546,6 +655,8 @@ export function sqliteLoadState(targetRunId?: string) {
     const runId = String(row.id);
     const run: TestRun = {
       id: runId,
+      category: (row.category as TestRun["category"]) || "GENERAL",
+      attackType: (row.attack_type as TestRun["attackType"]) || null,
       status: row.status as RunStatus,
       paused: Boolean(row.paused),
       controlVersion: Number(row.control_version || 1),
@@ -574,6 +685,8 @@ export function sqliteLoadState(targetRunId?: string) {
   const scenarios: Scenario[] = scenarioRows.map((row) => ({
     id: String(row.id),
     name: String(row.name),
+    category: (row.category as Scenario["category"]) || "GENERAL",
+    attackType: (row.attack_type as Scenario["attackType"]) || null,
     systemPrompt: String(row.system_prompt),
     userMessages: JSON.parse(String(row.user_messages)),
     createdAt: String(row.created_at),
@@ -581,4 +694,13 @@ export function sqliteLoadState(targetRunId?: string) {
   }));
 
   return { runs, scenarios };
+}
+
+function safeJsonParse(value: unknown) {
+  if (!value) return null;
+  try {
+    return typeof value === "string" ? JSON.parse(value) : value;
+  } catch {
+    return null;
+  }
 }

@@ -1067,6 +1067,61 @@ p {
   background: rgb(137 148 168 / 10%);
 }
 
+.security-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.security-badge.immune {
+  color: var(--accent);
+  background: rgb(200 242 107 / 12%);
+  border: 1px solid rgb(200 242 107 / 30%);
+}
+
+.security-badge.vulnerable {
+  color: var(--warning);
+  background: rgb(245 186 100 / 12%);
+  border: 1px solid rgb(245 186 100 / 30%);
+}
+
+.security-badge.leakage {
+  color: var(--danger);
+  background: rgb(255 123 123 / 12%);
+  border: 1px solid rgb(255 123 123 / 30%);
+}
+
+.template-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+.template-btn {
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.template-btn:hover {
+  border-color: var(--accent);
+  background: rgb(200 242 107 / 8%);
+}
+
 .metric {
   display: grid;
   gap: 4px;

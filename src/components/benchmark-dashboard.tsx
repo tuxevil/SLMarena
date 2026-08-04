@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { HumanStatus, ModelResult, Scenario, TestRun } from "@/lib/contracts";
+import type { Evaluation, HumanStatus, ModelResult, Scenario, SecurityAttackType, TestCategory, TestRun } from "@/lib/contracts";
+import { SECURITY_TEMPLATES } from "@/lib/security-templates";
 
 type ModelOption = {
   name: string;
@@ -27,6 +28,9 @@ type ModelAggregate = {
   averageOutputTokens: number | null;
   averageTokPerSec: number | null;
   averageTotalDurationMs: number | null;
+  securityAttacks: number;
+  securitySuccesses: number;
+  asrPercent: number | null;
 };
 
 type ConsolidatedResult = {
@@ -56,27 +60,14 @@ type SettingsPayload = {
 const DEFAULT_SYSTEM_PROMPT = "You are a precise technical assistant. Explain trade-offs clearly and do not invent facts.";
 const DEFAULT_MESSAGES = ["Compare REST and GraphQL for a small internal service."];
 
-function getInitialLocalSettings(): {
-  ollamaUrl?: string;
-  evaluatorBaseUrl?: string;
-  evaluatorModel?: string;
-  parameters?: ParameterState;
-} | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem("slmarena_settings");
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
 export function BenchmarkDashboard() {
   const [tab, setTab] = useState<"benchmark" | "settings">("benchmark");
 
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("");
   const [scenarioName, setScenarioName] = useState("New scenario");
+  const [category, setCategory] = useState<TestCategory>("GENERAL");
+  const [attackType, setAttackType] = useState<SecurityAttackType | null>(null);
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [messages, setMessages] = useState<string[]>(DEFAULT_MESSAGES);
   const [editingLocked, setEditingLocked] = useState(false);
@@ -109,6 +100,7 @@ export function BenchmarkDashboard() {
   const [historyDate, setHistoryDate] = useState("");
   const [historyModel, setHistoryModel] = useState("");
   const [historyScore, setHistoryScore] = useState("");
+  const [historyVulnerableOnly, setHistoryVulnerableOnly] = useState(false);
   const [notice, setNotice] = useState("");
   const [analysisRefreshKey, setAnalysisRefreshKey] = useState(0);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
@@ -119,11 +111,11 @@ export function BenchmarkDashboard() {
     void fetch("/api/settings")
       .then((response) => response.json() as Promise<SettingsPayload>)
       .then((payload) => {
-        if (payload.settings?.ollamaUrl || payload.settings?.evaluatorBaseUrl || payload.settings?.evaluatorModel) {
-          setOllamaUrl(payload.settings.ollamaUrl);
-          setEvaluatorBaseUrl(payload.settings.evaluatorBaseUrl);
-          setEvaluatorModel(payload.settings.evaluatorModel);
-          setEvaluatorKeyConfigured(payload.settings.evaluatorApiKeyConfigured);
+        if (payload.settings) {
+          if (payload.settings.ollamaUrl) setOllamaUrl(payload.settings.ollamaUrl);
+          if (payload.settings.evaluatorBaseUrl !== undefined) setEvaluatorBaseUrl(payload.settings.evaluatorBaseUrl);
+          if (payload.settings.evaluatorModel !== undefined) setEvaluatorModel(payload.settings.evaluatorModel);
+          setEvaluatorKeyConfigured(Boolean(payload.settings.evaluatorApiKeyConfigured));
           if (payload.settings.parameters) {
             setParameters({
               temperature: String(payload.settings.parameters.temperature),
@@ -133,29 +125,26 @@ export function BenchmarkDashboard() {
               numPredict: String(payload.settings.parameters.numPredict),
             });
           }
-          return;
-        }
-        const local = getInitialLocalSettings();
-        if (local) {
-          if (local.ollamaUrl) setOllamaUrl(local.ollamaUrl);
-          if (local.evaluatorBaseUrl !== undefined) setEvaluatorBaseUrl(local.evaluatorBaseUrl);
-          if (local.evaluatorModel !== undefined) setEvaluatorModel(local.evaluatorModel);
-          if (local.parameters) setParameters(local.parameters);
         }
       })
-      .catch(() => {
-        const local = getInitialLocalSettings();
-        if (local) {
-          if (local.ollamaUrl) setOllamaUrl(local.ollamaUrl);
-          if (local.evaluatorBaseUrl !== undefined) setEvaluatorBaseUrl(local.evaluatorBaseUrl);
-          if (local.evaluatorModel !== undefined) setEvaluatorModel(local.evaluatorModel);
-          if (local.parameters) setParameters(local.parameters);
-        }
-      });
+      .catch(() => undefined);
 
     void fetch("/api/scenarios")
       .then((response) => response.json() as Promise<{ scenarios?: Scenario[] }>)
-      .then((payload) => setScenarios(payload.scenarios ?? []))
+      .then((payload) => {
+        const loaded = payload.scenarios ?? [];
+        setScenarios(loaded);
+        if (loaded.length > 0) {
+          const scenario = loaded[0];
+          setSelectedScenarioId(scenario.id);
+          setScenarioName(scenario.name);
+          setCategory(scenario.category ?? "GENERAL");
+          setAttackType(scenario.attackType ?? null);
+          setSystemPrompt(scenario.systemPrompt);
+          setMessages(scenario.userMessages);
+          setEditingLocked(true);
+        }
+      })
       .catch(() => undefined);
   }, []);
 
@@ -165,6 +154,7 @@ export function BenchmarkDashboard() {
       date: historyDate,
       model: historyModel,
       score: historyScore,
+      vulnerableOnly: String(historyVulnerableOnly),
       timezoneOffset: String(new Date().getTimezoneOffset()),
       page: "1",
       pageSize: "50",
@@ -172,11 +162,15 @@ export function BenchmarkDashboard() {
     void fetch(`/api/runs?${params}`)
       .then((response) => response.json() as Promise<{ runs?: TestRun[]; total?: number }>)
       .then((payload) => {
-        setHistory(payload.runs ?? []);
+        const runs = payload.runs ?? [];
+        setHistory(runs);
         setHistoryTotal(payload.total ?? 0);
+        if (runs.length > 0 && !activeRun) {
+          setActiveRun(runs[0]);
+        }
       })
       .catch(() => undefined);
-  }, [historyDate, historyFilter, historyModel, historyScore, historyRefreshKey]);
+  }, [historyDate, historyFilter, historyModel, historyScore, historyVulnerableOnly, historyRefreshKey]);
 
   const scenarioRef = useRef({ selectedScenarioId, systemPrompt, messages });
   useEffect(() => {
@@ -237,6 +231,8 @@ export function BenchmarkDashboard() {
     if (!scenario) return;
     setSelectedScenarioId(id);
     setScenarioName(scenario.name);
+    setCategory(scenario.category ?? "GENERAL");
+    setAttackType(scenario.attackType ?? null);
     setSystemPrompt(scenario.systemPrompt);
     setMessages(scenario.userMessages);
     setEditingLocked(true);
@@ -246,12 +242,27 @@ export function BenchmarkDashboard() {
     if (!value) {
       setSelectedScenarioId("");
       setScenarioName("New scenario");
+      setCategory("GENERAL");
+      setAttackType(null);
       setSystemPrompt(DEFAULT_SYSTEM_PROMPT);
       setMessages(DEFAULT_MESSAGES);
       setEditingLocked(false);
       return;
     }
     loadScenario(value);
+  }
+
+  function applySecurityTemplate(type: SecurityAttackType) {
+    const template = SECURITY_TEMPLATES[type];
+    if (!template) return;
+    setSelectedScenarioId("");
+    setEditingLocked(false);
+    setCategory("SECURITY");
+    setAttackType(type);
+    setScenarioName(template.name);
+    setSystemPrompt(template.systemPrompt);
+    setMessages(template.userMessages);
+    setNotice(`Plantilla '${template.name}' cargada.`);
   }
 
   function duplicateToDraft() {
@@ -277,7 +288,13 @@ export function BenchmarkDashboard() {
     const response = await fetch("/api/scenarios", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: scenarioName.trim(), systemPrompt, userMessages: messages }),
+      body: JSON.stringify({
+        name: scenarioName.trim(),
+        category,
+        attackType: category === "SECURITY" ? attackType : null,
+        systemPrompt,
+        userMessages: messages,
+      }),
     });
     const payload = (await response.json()) as { scenario?: Scenario; error?: string };
     if (!response.ok || !payload.scenario) {
@@ -347,6 +364,8 @@ export function BenchmarkDashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           ollamaUrl,
+          category,
+          attackType: category === "SECURITY" ? attackType : null,
           scenarioId: selectedScenarioId || null,
           samplesPerModel: clampSamples(samplesPerModel),
           systemPrompt,
@@ -551,6 +570,70 @@ export function BenchmarkDashboard() {
                   value={scenarioName}
                 />
               </div>
+
+              <div className="field">
+                <label htmlFor="test-category">Test category</label>
+                <select
+                  className="input"
+                  disabled={editingLocked}
+                  id="test-category"
+                  onChange={(event) => {
+                    const nextCat = event.target.value as TestCategory;
+                    setCategory(nextCat);
+                    if (nextCat === "SECURITY" && !attackType) {
+                      setAttackType("INSTRUCTION_OVERRIDE");
+                    }
+                  }}
+                  value={category}
+                >
+                  <option value="GENERAL">General (Calidad y Adherencia)</option>
+                  <option value="SECURITY">Seguridad (Prompt Injection & Red Teaming)</option>
+                </select>
+              </div>
+
+              {category === "SECURITY" ? (
+                <div className="field">
+                  <label htmlFor="attack-type">Tipo de Vector de Ataque</label>
+                  <select
+                    className="input"
+                    disabled={editingLocked}
+                    id="attack-type"
+                    onChange={(event) => setAttackType(event.target.value as SecurityAttackType)}
+                    value={attackType ?? "INSTRUCTION_OVERRIDE"}
+                  >
+                    <option value="INSTRUCTION_OVERRIDE">Instruction Override (Anulación)</option>
+                    <option value="SYSTEM_PROMPT_LEAKAGE">System Prompt Leakage (Fuga)</option>
+                    <option value="INDIRECT_PROMPT_INJECTION">Indirect Prompt Injection</option>
+                  </select>
+
+                  {!editingLocked ? (
+                    <div className="template-bar">
+                      <span className="section-label" style={{ width: "100%", marginBottom: "4px" }}>Cargar plantilla precargada:</span>
+                      <button
+                        className="template-btn"
+                        onClick={() => applySecurityTemplate("INSTRUCTION_OVERRIDE")}
+                        type="button"
+                      >
+                        ⚡ Instruction Override
+                      </button>
+                      <button
+                        className="template-btn"
+                        onClick={() => applySecurityTemplate("SYSTEM_PROMPT_LEAKAGE")}
+                        type="button"
+                      >
+                        🔑 Prompt Leakage
+                      </button>
+                      <button
+                        className="template-btn"
+                        onClick={() => applySecurityTemplate("INDIRECT_PROMPT_INJECTION")}
+                        type="button"
+                      >
+                        🛡️ Indirect Injection
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="field">
                 <div className="result-card-top">
                   <label htmlFor="system-prompt">System prompt</label>
@@ -730,6 +813,7 @@ export function BenchmarkDashboard() {
                     <span>Samples</span>
                     <span>Score distribution</span>
                     <span>Avg</span>
+                    {analysis.models.some((m) => m.securityAttacks > 0) ? <span>ASR</span> : null}
                     <span>TTFT</span>
                     <span>Tok/s</span>
                     <span>Output</span>
@@ -751,6 +835,11 @@ export function BenchmarkDashboard() {
                         {model.evaluatedSamples === 0 ? <span className="run-count">no evaluations yet</span> : null}
                       </span>
                       <span>{model.averageStars === null ? "--" : `${model.averageStars}/5`}</span>
+                      {analysis.models.some((m) => m.securityAttacks > 0) ? (
+                        <span>
+                          {model.asrPercent !== null ? `${model.asrPercent}% (${model.securitySuccesses}/${model.securityAttacks})` : "--"}
+                        </span>
+                      ) : null}
                       <span>{model.averageTtftMs === null ? "--" : `${model.averageTtftMs} ms`}</span>
                       <span>{model.averageTokPerSec === null ? "--" : model.averageTokPerSec}</span>
                       <span>{model.averageOutputTokens === null ? "--" : model.averageOutputTokens}</span>
@@ -810,12 +899,27 @@ export function BenchmarkDashboard() {
                         </option>
                       ))}
                     </select>
+                    <select
+                      aria-label="Filter benchmark history by security vulnerability"
+                      className="history-filter"
+                      onChange={(event) => setHistoryVulnerableOnly(event.target.value === "true")}
+                      value={String(historyVulnerableOnly)}
+                    >
+                      <option value="false">Todos los estados</option>
+                      <option value="true">Solo vulnerados</option>
+                    </select>
                   </div>
                 </div>
                 <div className="history-list">
                   {history
                     .filter((run) =>
-                      matchesHistory(run, { keyword: historyFilter, date: historyDate, model: historyModel, score: historyScore }),
+                      matchesHistory(run, {
+                        keyword: historyFilter,
+                        date: historyDate,
+                        model: historyModel,
+                        score: historyScore,
+                        vulnerableOnly: historyVulnerableOnly,
+                      }),
                     )
                     .map((run) => (
                       <button
@@ -1470,7 +1574,7 @@ function ResultItem({
               {renderStars(score)}
             </span>
           </span>
-          {result.evaluation ? (
+          {result.evaluation && result.evaluation.securityScore === null ? (
             <>
               <span className="test-score-row">
                 <span className="test-score-name">Grammar</span>
@@ -1493,6 +1597,7 @@ function ResultItem({
             </>
           ) : null}
         </span>
+        {renderSecurityBadge(result.evaluation)}
         <span className={`status test-status ${statusClass}`}>{result.status}</span>
         <span className="test-chevron" aria-hidden="true">
           ↓
@@ -1570,23 +1675,48 @@ function ResultItem({
           <section className="detail-section evaluation-section">
             <div className="detail-section-heading">
               <div>
-                <p className="section-label">Automated review</p>
+                <p className="section-label">
+                  {result.evaluation.securityScore !== null && result.evaluation.securityScore !== undefined
+                    ? "Auditoría de Seguridad (Juez Red Teaming)"
+                    : "Automated review"}
+                </p>
                 <h3>{result.evaluation.feedbackText}</h3>
               </div>
-              <span className="stars" aria-label="Automated evaluator score">
-                {renderStars(score)}
-              </span>
+              {result.evaluation.securityScore !== null && result.evaluation.securityScore !== undefined ? (
+                renderSecurityBadge(result.evaluation)
+              ) : (
+                <span className="stars" aria-label="Automated evaluator score">
+                  {renderStars(score)}
+                </span>
+              )}
             </div>
-            <div className="rating-grid">
-              <Metric label="Grammar" value={formatRating(result.evaluation.grammarRating)} />
-              <Metric label="Compliance" value={formatRating(result.evaluation.complianceRating)} />
-              <Metric label="Accuracy" value={formatRating(result.evaluation.accuracyRating)} />
-            </div>
-            <div className="evaluation-copy">
-              <span>Grammar: {result.evaluation.grammarAnalysis}</span>
-              <span>Instruction fit: {result.evaluation.complianceAnalysis}</span>
-              <span>Accuracy: {result.evaluation.accuracyAnalysis}</span>
-            </div>
+            {result.evaluation.securityScore !== null && result.evaluation.securityScore !== undefined ? (
+              <>
+                <div className="rating-grid">
+                  <Metric label="Resistencia" value={`${result.evaluation.securityScore}/5`} />
+                  <Metric label="Inyección exitosa" value={result.evaluation.injectionSuccessful ? "Sí (Vulnerable)" : "No"} />
+                  <Metric label="Fuga de datos" value={result.evaluation.systemLeakageDetected ? "Sí (Fuga)" : "No"} />
+                </div>
+                {result.evaluation.vulnerabilityAnalysis ? (
+                  <div className="evaluation-copy">
+                    <span><strong>Análisis de Vulnerabilidad:</strong> {result.evaluation.vulnerabilityAnalysis}</span>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="rating-grid">
+                  <Metric label="Grammar" value={formatRating(result.evaluation.grammarRating)} />
+                  <Metric label="Compliance" value={formatRating(result.evaluation.complianceRating)} />
+                  <Metric label="Accuracy" value={formatRating(result.evaluation.accuracyRating)} />
+                </div>
+                <div className="evaluation-copy">
+                  <span>Grammar: {result.evaluation.grammarAnalysis}</span>
+                  <span>Instruction fit: {result.evaluation.complianceAnalysis}</span>
+                  <span>Accuracy: {result.evaluation.accuracyAnalysis}</span>
+                </div>
+              </>
+            )}
           </section>
         ) : null}
 
@@ -1677,19 +1807,38 @@ function statusCopy(status: ModelResult["status"]) {
 
 function matchesHistory(
   run: TestRun,
-  filters: { keyword: string; date: string; model: string; score: string },
+  filters: { keyword: string; date: string; model: string; score: string; vulnerableOnly: boolean },
 ) {
   const query = filters.keyword.trim().toLowerCase();
   if (query && !JSON.stringify(run).toLowerCase().includes(query)) return false;
   if (filters.date && localDateForBrowser(run.createdAt) !== filters.date) return false;
   if (filters.model && !run.models.includes(filters.model)) return false;
   if (filters.score && !run.results.some((result) => result.evaluation?.scoreStars === Number(filters.score))) return false;
+  if (
+    filters.vulnerableOnly &&
+    !run.results.some(
+      (res) => res.evaluation?.injectionSuccessful || res.evaluation?.systemLeakageDetected,
+    )
+  ) {
+    return false;
+  }
   return true;
 }
 
 function localDateForBrowser(timestamp: string) {
   const date = new Date(timestamp);
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
+
+function renderSecurityBadge(evaluation: Evaluation | null) {
+  if (!evaluation || evaluation.securityScore === null || evaluation.securityScore === undefined) return null;
+  if (evaluation.systemLeakageDetected) {
+    return <span className="security-badge leakage">FUGA DE DATOS</span>;
+  }
+  if (evaluation.injectionSuccessful) {
+    return <span className="security-badge vulnerable">VULNERABLE</span>;
+  }
+  return <span className="security-badge immune">INMUNE</span>;
 }
 
 function ParameterInput({

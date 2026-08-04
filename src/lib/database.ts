@@ -50,6 +50,9 @@ export type ModelAggregate = {
   averageOutputTokens: number | null;
   averageTokPerSec: number | null;
   averageTotalDurationMs: number | null;
+  securityAttacks: number;
+  securitySuccesses: number;
+  asrPercent: number | null;
 };
 
 export type ConsolidatedResult = {
@@ -99,16 +102,43 @@ export async function aggregateScenarioAnalysis(input: {
   const key = scenarioKeyFor(input);
   const runs = state.runs.filter((entry) => scenarioKeyFor(entry.run) === key);
 
-  const byModel = new Map<string, { stars: number[]; ttft: number[]; output: number[]; tokPerSec: number[]; total: number[]; failures: number }>();
+  const byModel = new Map<
+    string,
+    {
+      stars: number[];
+      ttft: number[];
+      output: number[];
+      tokPerSec: number[];
+      total: number[];
+      failures: number;
+      securityAttacks: number;
+      securitySuccesses: number;
+    }
+  >();
   for (const entry of runs) {
     for (const result of entry.run.results) {
-      const bucket = byModel.get(result.modelName) ?? { stars: [], ttft: [], output: [], tokPerSec: [], total: [], failures: 0 };
+      const bucket = byModel.get(result.modelName) ?? {
+        stars: [],
+        ttft: [],
+        output: [],
+        tokPerSec: [],
+        total: [],
+        failures: 0,
+        securityAttacks: 0,
+        securitySuccesses: 0,
+      };
       if (result.status === "FAILED" || result.status === "CANCELLED") bucket.failures += 1;
       if (result.evaluation?.scoreStars != null) bucket.stars.push(result.evaluation.scoreStars);
       if (result.ttftMs != null) bucket.ttft.push(result.ttftMs);
       if (result.outputTokens != null) bucket.output.push(result.outputTokens);
       if (result.tokPerSec != null) bucket.tokPerSec.push(result.tokPerSec);
       if (result.totalDurationMs != null) bucket.total.push(result.totalDurationMs);
+      if (result.evaluation?.securityScore != null) {
+        bucket.securityAttacks += 1;
+        if (result.evaluation.injectionSuccessful || result.evaluation.systemLeakageDetected) {
+          bucket.securitySuccesses += 1;
+        }
+      }
       byModel.set(result.modelName, bucket);
     }
   }
@@ -116,6 +146,10 @@ export async function aggregateScenarioAnalysis(input: {
   const models: ModelAggregate[] = [...byModel.entries()].map(([modelName, bucket]) => {
     const distribution: Record<number, number> = {};
     for (const star of bucket.stars) distribution[star] = (distribution[star] ?? 0) + 1;
+    const asrPercent =
+      bucket.securityAttacks > 0
+        ? Number(((bucket.securitySuccesses / bucket.securityAttacks) * 100).toFixed(1))
+        : null;
     return {
       modelName,
       samples: bucket.stars.length + bucket.failures,
@@ -127,6 +161,9 @@ export async function aggregateScenarioAnalysis(input: {
       averageOutputTokens: average(bucket.output),
       averageTokPerSec: average(bucket.tokPerSec),
       averageTotalDurationMs: average(bucket.total),
+      securityAttacks: bucket.securityAttacks,
+      securitySuccesses: bucket.securitySuccesses,
+      asrPercent,
     };
   });
 
@@ -184,10 +221,12 @@ export async function persistScenario(scenario: Scenario) {
     return;
   }
   await getClient()!`
-    INSERT INTO scenarios (id, name, system_prompt, user_messages, created_at, updated_at)
-    VALUES (${scenario.id}, ${scenario.name}, ${scenario.systemPrompt}, ${JSON.stringify(scenario.userMessages)}::jsonb, ${new Date(scenario.createdAt)}, ${new Date(scenario.updatedAt)})
+    INSERT INTO scenarios (id, name, category, attack_type, system_prompt, user_messages, created_at, updated_at)
+    VALUES (${scenario.id}, ${scenario.name}, ${scenario.category ?? "GENERAL"}, ${scenario.attackType ?? null}, ${scenario.systemPrompt}, ${JSON.stringify(scenario.userMessages)}::jsonb, ${new Date(scenario.createdAt)}, ${new Date(scenario.updatedAt)})
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
+      category = EXCLUDED.category,
+      attack_type = EXCLUDED.attack_type,
       system_prompt = EXCLUDED.system_prompt,
       user_messages = EXCLUDED.user_messages,
       updated_at = EXCLUDED.updated_at
@@ -309,8 +348,8 @@ export async function loadPersistedState(runId?: string): Promise<DatabaseState 
   try {
     const [runRows, resultRows, turnRows, evaluationRows, scenarioRows] = await sql.begin(async (transaction) => Promise.all([
       runId
-        ? transaction`SELECT id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
-        : transaction`SELECT id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
+        ? transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
+        : transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
       runId
         ? transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results WHERE test_run_id = ${runId}`
         : transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results`,
@@ -318,9 +357,9 @@ export async function loadPersistedState(runId?: string): Promise<DatabaseState 
         ? transaction`SELECT id, model_result_id, step_order, user_message, response_text, thinking, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms FROM model_result_turns WHERE model_result_id IN (SELECT id FROM model_results WHERE test_run_id = ${runId}) ORDER BY step_order ASC`
         : transaction`SELECT id, model_result_id, step_order, user_message, response_text, thinking, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms FROM model_result_turns ORDER BY step_order ASC`,
       runId
-        ? transaction`SELECT model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, evaluator_raw_json FROM evaluations WHERE model_result_id IN (SELECT id FROM model_results WHERE test_run_id = ${runId})`
-        : transaction`SELECT model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, evaluator_raw_json FROM evaluations`,
-      runId ? emptyRows : transaction`SELECT id, name, system_prompt, user_messages, created_at, updated_at FROM scenarios ORDER BY updated_at DESC`,
+        ? transaction`SELECT model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, security_score, injection_successful, system_leakage_detected, vulnerability_analysis, evaluator_raw_json FROM evaluations WHERE model_result_id IN (SELECT id FROM model_results WHERE test_run_id = ${runId})`
+        : transaction`SELECT model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, security_score, injection_successful, system_leakage_detected, vulnerability_analysis, evaluator_raw_json FROM evaluations`,
+      runId ? emptyRows : transaction`SELECT id, name, category, attack_type, system_prompt, user_messages, created_at, updated_at FROM scenarios ORDER BY updated_at DESC`,
     ]));
 
     const turnsByResult = groupTurns(turnRows);
@@ -349,6 +388,7 @@ export async function listPersistedHistory(filters: {
   date: string;
   model: string;
   score?: number;
+  vulnerableOnly?: boolean;
   timezoneOffset: number;
   page: number;
   pageSize: number;
@@ -371,6 +411,13 @@ export async function listPersistedHistory(filters: {
     if (filters.score !== undefined) {
       runs = runs.filter((r) => r.results.some((res) => res.evaluation?.scoreStars === filters.score));
     }
+    if (filters.vulnerableOnly) {
+      runs = runs.filter((r) =>
+        r.results.some(
+          (res) => res.evaluation?.injectionSuccessful || res.evaluation?.systemLeakageDetected,
+        ),
+      );
+    }
     if (filters.date) {
       runs = runs.filter((r) => {
         const runDate = new Date(new Date(r.createdAt).getTime() - filters.timezoneOffset * 60_000).toISOString().slice(0, 10);
@@ -389,6 +436,7 @@ export async function listPersistedHistory(filters: {
   }
   const sql = getClient()!;
   const score = filters.score ?? null;
+  const vulnerableOnly = Boolean(filters.vulnerableOnly);
   const where = sql`
     WHERE (${filters.keyword} = '' OR test_runs.system_prompt ILIKE '%' || ${filters.keyword} || '%'
       OR test_runs.user_messages::text ILIKE '%' || ${filters.keyword} || '%'
@@ -409,6 +457,12 @@ export async function listPersistedHistory(filters: {
         SELECT 1 FROM model_results score_results
         JOIN evaluations score_evaluations ON score_evaluations.model_result_id = score_results.id
         WHERE score_results.test_run_id = test_runs.id AND score_evaluations.score_stars = ${score}::int
+      ))
+      AND (${!vulnerableOnly} OR EXISTS (
+        SELECT 1 FROM model_results vuln_results
+        JOIN evaluations vuln_eval ON vuln_eval.model_result_id = vuln_results.id
+        WHERE vuln_results.test_run_id = test_runs.id
+          AND (vuln_eval.injection_successful = TRUE OR vuln_eval.system_leakage_detected = TRUE)
       ))
   `;
   const [rows, countRows] = await Promise.all([
@@ -441,9 +495,11 @@ async function persistRun(run: TestRun, config: RunPersistenceConfig) {
 
   await sql.begin(async (transaction) => {
     await transaction`
-      INSERT INTO test_runs (id, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
-      VALUES (${run.id}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.scenarioId}, ${run.samplesPerModel}, ${run.systemPrompt}, ${config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
+      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
+      VALUES (${run.id}, ${run.category ?? "GENERAL"}, ${run.attackType ?? null}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.scenarioId}, ${run.samplesPerModel}, ${run.systemPrompt}, ${config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
       ON CONFLICT (id) DO UPDATE SET
+        category = EXCLUDED.category,
+        attack_type = EXCLUDED.attack_type,
         status = CASE WHEN EXCLUDED.control_version >= test_runs.control_version THEN EXCLUDED.status ELSE test_runs.status END,
         paused = CASE WHEN EXCLUDED.control_version >= test_runs.control_version THEN EXCLUDED.paused ELSE test_runs.paused END,
         control_version = GREATEST(test_runs.control_version, EXCLUDED.control_version),
@@ -495,8 +551,8 @@ async function persistTurn(transaction: TransactionSql, resultId: string, turn: 
 
 async function persistEvaluation(transaction: TransactionSql, resultId: string, evaluation: NonNullable<ModelResult["evaluation"]>) {
   await transaction`
-    INSERT INTO evaluations (id, model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, evaluator_raw_json)
-    VALUES (${crypto.randomUUID()}, ${resultId}, ${evaluation.evaluatorModel}, ${evaluation.grammarRating}, ${evaluation.complianceRating}, ${evaluation.accuracyRating}, ${evaluation.scoreStars}, ${evaluation.grammarAnalysis}, ${evaluation.complianceAnalysis}, ${evaluation.accuracyAnalysis}, ${evaluation.feedbackText}, ${JSON.stringify(evaluation.rawJson)}::jsonb)
+    INSERT INTO evaluations (id, model_result_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, security_score, injection_successful, system_leakage_detected, vulnerability_analysis, evaluator_raw_json)
+    VALUES (${crypto.randomUUID()}, ${resultId}, ${evaluation.evaluatorModel}, ${evaluation.grammarRating}, ${evaluation.complianceRating}, ${evaluation.accuracyRating}, ${evaluation.scoreStars}, ${evaluation.grammarAnalysis}, ${evaluation.complianceAnalysis}, ${evaluation.accuracyAnalysis}, ${evaluation.feedbackText}, ${evaluation.securityScore ?? null}, ${evaluation.injectionSuccessful ?? null}, ${evaluation.systemLeakageDetected ?? null}, ${evaluation.vulnerabilityAnalysis ?? null}, ${JSON.stringify(evaluation.rawJson)}::jsonb)
   `;
 }
 
@@ -533,6 +589,8 @@ function restoreRun(row: Record<string, unknown>, results: ModelResult[]): Persi
   return {
     run: {
       id: String(row.id),
+      category: (row.category as TestRun["category"]) || "GENERAL",
+      attackType: (row.attack_type as TestRun["attackType"]) || null,
       status: String(row.status) as TestRun["status"],
       paused: Boolean(row.paused),
       controlVersion: Number(row.control_version ?? 0),
@@ -565,6 +623,10 @@ function restoreResult(row: Record<string, unknown>, turns: TurnResult[], evalua
         complianceAnalysis: String(evaluationRow.compliance_analysis ?? ""),
         accuracyAnalysis: String(evaluationRow.accuracy_analysis ?? ""),
         feedbackText: String(evaluationRow.feedback_text ?? ""),
+        securityScore: numberOrNull(evaluationRow.security_score),
+        injectionSuccessful: evaluationRow.injection_successful !== null && evaluationRow.injection_successful !== undefined ? Boolean(evaluationRow.injection_successful) : null,
+        systemLeakageDetected: evaluationRow.system_leakage_detected !== null && evaluationRow.system_leakage_detected !== undefined ? Boolean(evaluationRow.system_leakage_detected) : null,
+        vulnerabilityAnalysis: evaluationRow.vulnerability_analysis ? String(evaluationRow.vulnerability_analysis) : null,
         rawJson: evaluationRow.evaluator_raw_json,
       }
     : null;
@@ -592,6 +654,8 @@ function restoreScenario(row: Record<string, unknown>): Scenario {
   return {
     id: String(row.id),
     name: String(row.name),
+    category: (row.category as Scenario["category"]) || "GENERAL",
+    attackType: (row.attack_type as Scenario["attackType"]) || null,
     systemPrompt: String(row.system_prompt),
     userMessages: parseJsonArray(row.user_messages),
     createdAt: dateToIso(row.created_at),

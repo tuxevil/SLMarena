@@ -62,6 +62,8 @@ export const benchmarkStore = {
     const now = new Date().toISOString();
     const run: StoredRun = {
       id,
+      category: input.category ?? "GENERAL",
+      attackType: input.attackType ?? null,
       status: "PENDING",
       paused: false,
       controlVersion: 0,
@@ -172,6 +174,7 @@ export const benchmarkStore = {
     date?: string;
     model?: string;
     score?: number;
+    vulnerableOnly?: boolean;
     timezoneOffset?: number;
     page?: number;
     pageSize?: number;
@@ -185,6 +188,14 @@ export const benchmarkStore = {
         if (keyword && !JSON.stringify(run).toLowerCase().includes(keyword)) return false;
         if (model && !run.models.includes(model)) return false;
         if (filters.score && !run.results.some((result) => result.evaluation?.scoreStars === filters.score)) return false;
+        if (
+          filters.vulnerableOnly &&
+          !run.results.some(
+            (res) => res.evaluation?.injectionSuccessful || res.evaluation?.systemLeakageDetected,
+          )
+        ) {
+          return false;
+        }
         if (date && localDate(run.createdAt, filters.timezoneOffset ?? 0) !== date) return false;
         return true;
       });
@@ -320,18 +331,33 @@ export const benchmarkStore = {
     return [...state.scenarios.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
-  async createScenario(input: Pick<Scenario, "name" | "systemPrompt" | "userMessages">) {
+  async createScenario(input: Pick<Scenario, "name" | "category" | "attackType" | "systemPrompt" | "userMessages">) {
     const now = new Date().toISOString();
-    const scenario: Scenario = { id: crypto.randomUUID(), ...input, createdAt: now, updatedAt: now };
+    const scenario: Scenario = {
+      id: crypto.randomUUID(),
+      category: input.category ?? "GENERAL",
+      attackType: input.attackType ?? null,
+      name: input.name,
+      systemPrompt: input.systemPrompt,
+      userMessages: input.userMessages,
+      createdAt: now,
+      updatedAt: now,
+    };
     await persistScenario(scenario);
     state.scenarios.set(scenario.id, scenario);
     return scenario;
   },
 
-  async updateScenario(id: string, input: Pick<Scenario, "name" | "systemPrompt" | "userMessages">) {
+  async updateScenario(id: string, input: Pick<Scenario, "name" | "category" | "attackType" | "systemPrompt" | "userMessages">) {
     const scenario = state.scenarios.get(id);
     if (!scenario) return null;
-    const updatedScenario = { ...scenario, ...input, updatedAt: new Date().toISOString() };
+    const updatedScenario: Scenario = {
+      ...scenario,
+      ...input,
+      category: input.category ?? scenario.category ?? "GENERAL",
+      attackType: input.attackType !== undefined ? input.attackType : scenario.attackType ?? null,
+      updatedAt: new Date().toISOString(),
+    };
     await persistScenario(updatedScenario);
     state.scenarios.set(id, updatedScenario);
     return updatedScenario;
@@ -406,6 +432,8 @@ function restoreRun(run: TestRun, config: RunPersistenceConfig) {
 function snapshot(run: StoredRun): TestRun {
   return structuredClone({
     id: run.id,
+    category: run.category ?? "GENERAL",
+    attackType: run.attackType ?? null,
     status: run.status,
     paused: run.paused,
     controlVersion: run.controlVersion,

@@ -65,8 +65,16 @@ CREATE TABLE IF NOT EXISTS model_results (
   UNIQUE (test_run_id, model_name, sample_index)
 );
 
-ALTER TABLE model_results DROP CONSTRAINT IF EXISTS model_results_test_run_id_model_name_key;
-ALTER TABLE model_results ADD COLUMN IF NOT EXISTS sample_index INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS category VARCHAR(16) NOT NULL DEFAULT 'GENERAL';
+ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS attack_type VARCHAR(32);
+
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS category VARCHAR(16) NOT NULL DEFAULT 'GENERAL';
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS attack_type VARCHAR(32);
+
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS security_score INTEGER CHECK (security_score BETWEEN 1 AND 5);
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS injection_successful BOOLEAN;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS system_leakage_detected BOOLEAN;
+ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS vulnerability_analysis TEXT;
 
 CREATE TABLE IF NOT EXISTS model_result_turns (
   id UUID PRIMARY KEY,

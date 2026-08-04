@@ -185,6 +185,7 @@ async function executeModel(runId: string, resultId: string) {
             responseText: currentResult?.responseText ?? "",
             modelName: result.modelName,
             signal: latestRun.cancelController.signal,
+            mode: latestRun.category === "SECURITY" ? "security" : "quality",
           }),
           latestRun.cancelController.signal,
           3,

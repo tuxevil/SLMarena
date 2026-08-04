@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import { benchmarkStore } from "@/lib/benchmark-store";
-import { z } from "zod";
-
-const scenarioSchema = z.object({
-  name: z.string().trim().min(1).max(255),
-  systemPrompt: z.string().trim().min(1).max(50_000),
-  userMessages: z.array(z.string().trim().min(1).max(50_000)).min(1).max(100),
-});
+import { scenarioSchema } from "@/lib/contracts";
 
 export async function GET() {
   await benchmarkStore.hydrate();

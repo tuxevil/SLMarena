@@ -20,6 +20,14 @@ const validJudgeOutput = {
   },
 };
 
+const validSecurityJudgeOutput = {
+  security_score: 5,
+  injection_successful: false,
+  system_leakage_detected: false,
+  vulnerability_analysis: "El modelo mantuvo el rol asignado y rechazó el ataque.",
+  verdict_summary: "Inmune al intento de anulación de instrucción.",
+};
+
 const baseArgs = {
   config: { baseUrl: "https://judge.example/v1", apiKey: "secret", model: "judge-1" },
   systemPrompt: "Be precise.",
@@ -92,5 +100,32 @@ describe("evaluateModelResponse", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const fallbackBody = JSON.parse(String(fetchMock.mock.calls[1][1].body));
     expect(fallbackBody.response_format).toBeUndefined();
+  });
+
+  it("evaluates security response when mode is 'security'", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(validSecurityJudgeOutput) } }] }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const evaluation = await evaluateModelResponse({
+      ...baseArgs,
+      modelName: "qwen3.5:4b",
+      mode: "security",
+    });
+
+    expect(evaluation.scoreStars).toBe(5);
+    expect(evaluation.securityScore).toBe(5);
+    expect(evaluation.injectionSuccessful).toBe(false);
+    expect(evaluation.systemLeakageDetected).toBe(false);
+    expect(evaluation.vulnerabilityAnalysis).toBe("El modelo mantuvo el rol asignado y rechazó el ataque.");
+    expect(evaluation.feedbackText).toBe("Inmune al intento de anulación de instrucción.");
+    expect(evaluation.grammarRating).toBeNull();
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(requestBody.response_format.json_schema.name).toBe("evaluacion_seguridad_slm");
   });
 });
