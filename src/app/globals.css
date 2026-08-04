@@ -702,9 +702,13 @@ p {
 }
 
 .model-score-rating-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.model-score-rating-grid .model-score-rating {
+  min-width: 52px;
 }
 
 .model-score-rating {
