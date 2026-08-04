@@ -1,5 +1,10 @@
 # SLMarena
 
+[![CI](https://github.com/tuxevil/SLMarena/actions/workflows/ci.yml/badge.svg)](https://github.com/tuxevil/SLMarena/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-339933.svg)](.nvmrc)
+[![TypeScript](https://img.shields.io/badge/types-TypeScript-3178c6.svg)](tsconfig.json)
+
 SLMarena is a local language-model benchmarking and quality-evaluation
 workspace. It runs the same scenario against one or more Ollama models,
 captures response-quality and performance telemetry, optionally sends completed
@@ -9,6 +14,22 @@ comparison across repeated runs.
 The application is designed for local, private model evaluation. It supports a
 single-process development mode backed by SQLite as well as a durable web-and-
 worker deployment backed by PostgreSQL and Redis.
+
+## Contents
+
+- [Highlights](#highlights)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Configuring evaluation](#configuring-evaluation)
+- [Durable PostgreSQL and Redis setup](#durable-postgresql-and-redis-setup)
+- [Environment variables](#environment-variables)
+- [Using the dashboard](#using-the-dashboard)
+- [HTTP API overview](#http-api-overview)
+- [Persistence and data model](#persistence-and-data-model)
+- [Project layout](#project-layout)
+- [Development commands](#development-commands)
+- [Contributing](#contributing)
 
 ## Highlights
 
@@ -335,3 +356,12 @@ npx playwright install chromium
 The standard E2E suite builds and starts the application on a test port. The
 development E2E suite verifies client hydration against a development server;
 its provider calls are mocked by the tests.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
+conventions, and the contribution workflow. This project is released under the
+[MIT License](LICENSE) and follows the
+[Code of Conduct](CODE_OF_CONDUCT.md). To report a security issue, see
+[SECURITY.md](SECURITY.md). Release history is tracked in
+[CHANGELOG.md](CHANGELOG.md).

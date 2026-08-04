@@ -2,6 +2,27 @@
   "name": "slmarena",
   "version": "0.1.0",
   "private": true,
+  "description": "Local language-model benchmarking and quality-evaluation workspace. Runs the same scenario against one or more Ollama models, captures telemetry, and optionally evaluates answers with an OpenAI-compatible judge.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuxevil/SLMarena.git"
+  },
+  "homepage": "https://github.com/tuxevil/SLMarena",
+  "bugs": {
+    "url": "https://github.com/tuxevil/SLMarena/issues"
+  },
+  "keywords": [
+    "llm",
+    "benchmark",
+    "ollama",
+    "evaluation",
+    "slm",
+    "nextjs"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
