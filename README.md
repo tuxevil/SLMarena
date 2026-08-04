@@ -1,6 +1,6 @@
-# Compare SLM
+# SLMarena
 
-Compare SLM is a local language-model benchmarking and quality-evaluation
+SLMarena is a local language-model benchmarking and quality-evaluation
 workspace. It runs the same scenario against one or more Ollama models,
 captures response-quality and performance telemetry, optionally sends completed
 answers to an OpenAI-compatible evaluator, and keeps the results available for
@@ -126,7 +126,7 @@ the model response. Its structured result is mapped to:
 
 The client accepts an OpenAI-compatible base URL and appends
 `/chat/completions` when necessary. If the endpoint rejects structured JSON
-output with HTTP 400, Compare retries once without `response_format` and still
+output with HTTP 400, SLMarena retries once without `response_format` and still
 validates the returned JSON before storing it. When the evaluator is not
 configured, model results complete with evaluation marked as skipped.
 
