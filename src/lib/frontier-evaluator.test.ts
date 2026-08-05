@@ -6,17 +6,17 @@ const validJudgeOutput = {
   verdict_summary: "Strong answer with a small wording issue.",
   grammar_and_spelling: {
     has_errors: true,
-    errors_found: ["erróneo -> errónea"],
-    summary: "Un error menor de concordancia.",
+    errors_found: ["wrong -> correct"],
+    summary: "A minor agreement error.",
   },
   system_prompt_compliance: {
     is_compliant: true,
     unmet_instructions: [],
-    summary: "Cumplió el formato solicitado.",
+    summary: "Followed requested format.",
   },
   accuracy_and_relevance: {
     score_1_to_10: 8,
-    summary: "Correcta para el alcance indicado.",
+    summary: "Accurate for the indicated scope.",
   },
 };
 
@@ -24,8 +24,8 @@ const validSecurityJudgeOutput = {
   security_score: 5,
   injection_successful: false,
   system_leakage_detected: false,
-  vulnerability_analysis: "El modelo mantuvo el rol asignado y rechazó el ataque.",
-  verdict_summary: "Inmune al intento de anulación de instrucción.",
+  vulnerability_analysis: "The model maintained its assigned role and rejected the attack.",
+  verdict_summary: "Immune to instruction override attempt.",
 };
 
 const baseArgs = {
@@ -58,7 +58,7 @@ describe("evaluateModelResponse", () => {
     expect(evaluation.grammarRating).toBe(3);
     expect(evaluation.complianceRating).toBe(5);
     expect(evaluation.accuracyRating).toBe(4);
-    expect(evaluation.grammarAnalysis).toContain("erróneo -> errónea");
+    expect(evaluation.grammarAnalysis).toContain("wrong -> correct");
     expect(evaluation.evaluatorModel).toBe("judge-1");
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1].body));
@@ -121,8 +121,8 @@ describe("evaluateModelResponse", () => {
     expect(evaluation.securityScore).toBe(5);
     expect(evaluation.injectionSuccessful).toBe(false);
     expect(evaluation.systemLeakageDetected).toBe(false);
-    expect(evaluation.vulnerabilityAnalysis).toBe("El modelo mantuvo el rol asignado y rechazó el ataque.");
-    expect(evaluation.feedbackText).toBe("Inmune al intento de anulación de instrucción.");
+    expect(evaluation.vulnerabilityAnalysis).toBe("The model maintained its assigned role and rejected the attack.");
+    expect(evaluation.feedbackText).toBe("Immune to instruction override attempt.");
     expect(evaluation.grammarRating).toBeNull();
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1].body));

@@ -79,27 +79,40 @@ test.beforeEach(async ({ page }) => {
     await route.fulfill({ json: { scenarios: [] } });
   });
   await page.route(/\/api\/runs\?/, async (route) => {
-    await route.fulfill({ json: { runs: [], total: 0, page: 1, pageSize: 50 } });
+    await route.fulfill({ json: { runs: [completedRun], total: 1, page: 1, pageSize: 50 } });
   });
-  await page.route(/\/api\/analysis\?/, async (route) => {
-    await route.fulfill({ json: {
-      scenarioKey: "scenario:scenario-1",
-      runs: 2,
-      results: [],
-      bestModel: { modelName: "llama3.2", averageStars: 4.5 },
-      models: [{
-        modelName: "llama3.2",
-        samples: 4,
-        evaluatedSamples: 4,
-        failures: 0,
-        distribution: { 4: 2, 5: 2 },
-        averageStars: 4.5,
-        averageTtftMs: 92,
-        averageOutputTokens: 24,
-        averageTokPerSec: 18.5,
-        averageTotalDurationMs: 1_300,
-      }],
-    } });
+  await page.route(/\/api\/leaderboard\?/, async (route) => {
+    await route.fulfill({
+      json: {
+        models: [
+          {
+            modelName: "llama3.2",
+            paramSizeLabel: "4B",
+            paramSizeValue: 4,
+            samplesCount: 2,
+            evaluatedSamplesCount: 2,
+            avgQualityStars: 4.0,
+            avgTtftMs: 85,
+            avgTokPerSec: 18.5,
+            attackSuccessRatePct: 0,
+            arenaIndex: 88,
+            radar: {
+              instructionOverrideResistance: 100,
+              systemPromptLeakageResistance: 100,
+              indirectInjectionDefense: 100,
+              systemPromptAdherence: 100,
+            },
+          },
+        ],
+        kpis: {
+          totalBenchmarkRuns: 1,
+          avgTokPerSec: 18.5,
+          avgTtftMs: 85,
+          totalAttackScenarios: 0,
+          avgAttackSuccessRatePct: 0,
+        },
+      },
+    });
   });
   await page.route(/\/api\/ollama\/models/, async (route) => {
     await route.fulfill({ json: { models: [{ name: "llama3.2", size: "4 GB" }] } });
@@ -117,112 +130,65 @@ test.beforeEach(async ({ page }) => {
       body: `data: ${snapshot}\n\ndata: ${completed}\n\n`,
     });
   });
-  await page.route(/\/api\/runs\/run-1\/results\/.+/, async (route) => {
-    if (route.request().method() !== "DELETE") return route.continue();
-    await route.fulfill({ status: 204 });
-  });
 });
 
-test("runs a benchmark and renders progressive evaluation", async ({ page }) => {
+test("renders the arena dashboard and displays top model winner", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Benchmark workspace" })).toBeVisible();
-  await page.getByRole("button", { name: /Discover models/ }).click();
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Start benchmark" }).click();
+  await expect(page.getByText("SLMArena")).toBeVisible();
+  await expect(page.getByText("Top Winning SLM Model")).toBeVisible();
+  await expect(page.locator(".winner-name", { hasText: "llama3.2" })).toBeVisible();
+});
 
-  const resultList = page.getByRole("region", { name: "Benchmark test list" });
-  await expect(resultList.getByRole("button", { name: "Expand all" })).toBeVisible();
-  await expect(resultList.locator(".response-full").first()).toBeHidden();
-  await resultList.getByRole("button", { name: "Expand all" }).click();
+test("supports scenario saving and adding conversation turns in execution builder", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "New Run" }).click();
+
+  // Save scenario
+  await page.getByRole("button", { name: "💾 Save to Library" }).click();
+  await expect(page.locator(".global-notice-banner", { hasText: "saved to library" })).toBeVisible();
+
+  // Add turn
+  await page.getByRole("button", { name: "+ Add Conversation Turn" }).click();
+  await expect(page.getByText("Turn 2")).toBeVisible();
+});
+
+test("launches a benchmark via the 3-step wizard", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "New Run" }).click();
+
+  // Step 1
+  await page.getByRole("button", { name: /Next: Select Models/ }).click();
+
+  // Step 2
+  await page.getByRole("button", { name: /Scan Local Ollama/ }).click();
+  await page.locator(".model-checkbox-card", { hasText: "llama3.2" }).click();
+  await page.getByRole("button", { name: /Next: Configure & Launch/ }).click();
+
+  // Step 3
+  await page.getByRole("button", { name: /Launch Benchmark & Evaluate/ }).click();
+
+  // Should transition to history matrix tab
+  await expect(page.locator(".history-matrix-panel")).toBeVisible();
+});
+
+test("displays detailed model-grouped view in history tab", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "History & Failures" }).click();
+
+  await expect(page.getByText("Model-Grouped Results")).toBeVisible();
+  await expect(page.locator(".group-card-header", { hasText: "llama3.2" })).toBeVisible();
+  await page.locator(".sample-item-summary").first().click();
   await expect(page.getByText("REST is simpler for this internal service.")).toBeVisible();
-  await expect(page.getByLabel("5 out of 5 stars")).toBeVisible();
-  await expect(page.getByText("Grammar: Clean.")).toBeVisible();
-  await expect(page.locator(".test-item").first().locator(".test-score-name", { hasText: "Compliance" })).toBeVisible();
 });
 
-test("keeps each benchmark result in a collapsible test row", async ({ page }) => {
+test("saves global settings in settings tab", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /Discover models/ }).click();
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Start benchmark" }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByPlaceholder("https://api.openai.com/v1").fill("https://judge.example/v1");
+  await page.getByPlaceholder("gpt-4o-mini, openrouter/auto...").fill("judge");
+  await page.getByRole("button", { name: "💾 Save Settings" }).click();
 
-  const resultList = page.getByRole("region", { name: "Benchmark test list" });
-  await expect(resultList.locator(".model-result-group")).toHaveCount(2);
-  await expect(resultList.locator(".model-result-group").nth(0).locator(".model-group-header h3")).toHaveText("llama3.2");
-  await expect(resultList.locator(".model-result-group").nth(1).locator(".model-group-header h3")).toHaveText("qwen2.5");
-  await expect(resultList.locator(".model-score")).toHaveCount(2);
-  await expect(resultList.locator(".model-score").first()).toBeVisible();
-  await expect(resultList.locator(".model-score").first()).toContainText("4.0");
-  await expect(resultList.locator(".model-score").first()).toContainText("Average ratings");
-  const ratingAverages = resultList.locator(".model-score-ratings").first().locator(".model-score-rating");
-  await expect(ratingAverages).toHaveCount(4);
-  await expect(ratingAverages.nth(0)).toContainText("Evaluator");
-  await expect(ratingAverages.nth(0)).toContainText("4.00/5");
-  await expect(ratingAverages.nth(1)).toContainText("Grammar");
-  await expect(ratingAverages.nth(1)).toContainText("4.00/5");
-  await expect(ratingAverages.nth(2)).toContainText("Compliance");
-  await expect(ratingAverages.nth(2)).toContainText("3.50/5");
-  await expect(ratingAverages.nth(3)).toContainText("Accuracy");
-  await expect(ratingAverages.nth(3)).toContainText("4.00/5");
-  await expect(resultList.locator(".model-score").first()).toContainText("Avg telemetry");
-  const telemetryAverages = resultList.locator(".model-score-telemetry").first().locator(".model-score-rating");
-  await expect(telemetryAverages).toHaveCount(4);
-  await expect(telemetryAverages.nth(0)).toContainText("Output");
-  await expect(telemetryAverages.nth(1)).toContainText("TTFT");
-  await expect(telemetryAverages.nth(2)).toContainText("Tok/s");
-  await expect(telemetryAverages.nth(3)).toContainText("Total");
-  await expect(resultList.locator("details.test-item")).toHaveCount(3);
-  const firstGroup = resultList.locator(".model-result-group").first();
-  await firstGroup.getByRole("button", { name: "Collapse llama3.2 results" }).click();
-  await expect(firstGroup.locator(".model-group-results")).toBeHidden();
-  await firstGroup.getByRole("button", { name: "Expand llama3.2 results" }).click();
-  await expect(firstGroup.locator(".model-group-results")).toBeVisible();
-  await resultList.getByRole("button", { name: "Collapse groups" }).click();
-  await expect(firstGroup.locator(".model-group-results")).toBeHidden();
-  await expect(resultList.locator(".model-result-group").nth(1).locator(".model-group-results")).toBeHidden();
-  await resultList.getByRole("button", { name: "Expand groups" }).click();
-  await expect(firstGroup.locator(".model-group-results")).toBeVisible();
-  await expect(resultList.getByRole("button", { name: "Expand all" })).toBeVisible();
-  await expect(resultList.locator(".response-full").first()).toBeHidden();
-  await resultList.getByRole("button", { name: "Expand all" }).click();
-  await resultList.getByRole("button", { name: "Collapse all" }).click();
-  await expect(resultList.getByRole("button", { name: "Expand all" })).toBeVisible();
-  await expect(resultList.locator(".response-full").first()).toBeHidden();
-  await expect(resultList.locator(".response-full").nth(1)).toBeHidden();
-  await expect(resultList.locator(".response-full").nth(2)).toBeHidden();
-  await resultList.getByRole("button", { name: "Expand all" }).click();
-  await expect(resultList.locator(".response-full").first()).toBeVisible();
-  await expect(resultList.locator(".response-full").nth(1)).toBeVisible();
-  await expect(resultList.locator(".response-full").nth(2)).toBeVisible();
-});
-
-test("deletes a sample from the consolidated results", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: /Discover models/ }).click();
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Start benchmark" }).click();
-
-  const resultList = page.getByRole("region", { name: "Benchmark test list" });
-  await expect(resultList.locator("details.test-item")).toHaveCount(3);
-  await resultList.getByRole("button", { name: "Expand all" }).click();
-  await expect(resultList.getByRole("button", { name: "Delete sample" })).toHaveCount(3);
-
-  page.once("dialog", (dialog) => void dialog.accept());
-  await resultList.getByRole("button", { name: "Delete sample" }).first().click();
-
-  await expect(resultList.locator("details.test-item")).toHaveCount(2);
-  await expect(resultList.getByRole("button", { name: "Delete sample" })).toHaveCount(2);
-});
-
-test("saves global settings and exposes scenario controls", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByLabel("OpenAI-compatible endpoint").fill("https://judge.example/v1");
-  await page.getByLabel("Judge model").fill("judge");
-  await page.getByRole("button", { name: "Save global settings" }).click();
-  await expect(page.getByText("Global settings saved.")).toBeVisible();
-  await page.getByRole("button", { name: "Benchmark", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save scenario" })).toBeVisible();
+  await expect(page.locator(".global-notice-banner", { hasText: "Settings saved successfully." })).toBeVisible();
 });
 
 function createRun(status: string, resultPatch: Record<string, unknown> = {}) {

@@ -67,7 +67,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
     return (
       <div style={{ padding: "40px", textAlign: "center", color: "var(--muted)" }}>
         <div style={{ margin: "0 auto 12px", width: "24px", height: "24px", border: "3px solid var(--accent)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }}></div>
-        <p style={{ margin: 0, fontSize: "0.85rem" }}>Cargando Dashboard Consolidado SLMArena v1.3...</p>
+        <p style={{ margin: 0, fontSize: "0.85rem" }}>Loading Consolidated Dashboard SLMArena v1.4...</p>
       </div>
     );
   }
@@ -87,47 +87,47 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
           </div>
           <div className="kpi-value-row">
             <span className="kpi-value">{kpis?.totalBenchmarkRuns ?? 0}</span>
-            <span className="kpi-subtext">ejecuciones guardadas</span>
+            <span className="kpi-subtext">saved runs</span>
           </div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-header">
-            <span className="kpi-title">Velocidad Promedio</span>
-            <span className="kpi-badge">⚡ Telemetría</span>
+            <span className="kpi-title">Average Speed</span>
+            <span className="kpi-badge">⚡ Telemetry</span>
           </div>
           <div className="kpi-value-row">
             <span className="kpi-value speed">
               {kpis?.avgSystemSpeed != null ? `${kpis.avgSystemSpeed}` : "—"}
             </span>
-            <span className="kpi-subtext">tok/s global</span>
+            <span className="kpi-subtext">global tok/s</span>
           </div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-header">
-            <span className="kpi-title">Calidad Promedio</span>
-            <span className="kpi-badge">★ Juez</span>
+            <span className="kpi-title">Average Quality</span>
+            <span className="kpi-badge">★ Judge</span>
           </div>
           <div className="kpi-value-row">
             <span className="kpi-value quality">
               {kpis?.globalAvgQuality != null ? `${kpis.globalAvgQuality} ★` : "—"}
             </span>
-            <span className="kpi-subtext">estrellas (1-5★)</span>
+            <span className="kpi-subtext">stars (1-5★)</span>
           </div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-header">
-            <span className="kpi-title">Vulnerabilidad (ASR)</span>
-            <span className="kpi-badge">🛡️ Seguridad</span>
+            <span className="kpi-title">Vulnerability (ASR)</span>
+            <span className="kpi-badge">🛡️ Security</span>
           </div>
           <div className="kpi-value-row">
             <span className="kpi-value asr">
               {kpis?.globalAsrPercent != null ? `${kpis.globalAsrPercent}%` : "0%"}
             </span>
             <span className="kpi-subtext">
-              {kpis?.globalAsrPercent != null ? `Índice Seg: ${(100 - kpis.globalAsrPercent).toFixed(1)}%` : "Sin ataques"}
+              {kpis?.globalAsrPercent != null ? `Sec Index: ${(100 - kpis.globalAsrPercent).toFixed(1)}%` : "No attacks"}
             </span>
           </div>
         </div>
@@ -137,39 +137,39 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
       <div className="filter-panel">
         <div className="filter-panel-header">
           <div>
-            <h3>Filtros Globales &amp; Ponderación &quot;Arena Index&quot;</h3>
-            <p>Ajusta los criterios de filtrado y desliza los pesos para recalcular el score compuesto en tiempo real.</p>
+            <h3>Global Filters &amp; &quot;Arena Index&quot; Weighting</h3>
+            <p>Adjust filtering criteria and slide weights to recalculate the composite score in real time.</p>
           </div>
           <div className="filter-controls-row">
             {/* Category Filter */}
             <div className="filter-group">
-              <span className="filter-label">Categoría:</span>
+              <span className="filter-label">Category:</span>
               <button
                 onClick={() => setCategory("ALL")}
                 className={`filter-btn ${category === "ALL" ? "active" : ""}`}
                 type="button"
               >
-                Todas
+                All
               </button>
               <button
                 onClick={() => setCategory("GENERAL")}
                 className={`filter-btn ${category === "GENERAL" ? "active" : ""}`}
                 type="button"
               >
-                General / Código
+                General / Code
               </button>
               <button
                 onClick={() => setCategory("SECURITY")}
                 className={`filter-btn ${category === "SECURITY" ? "active security" : ""}`}
                 type="button"
               >
-                Red Teaming / Seguridad
+                Red Teaming / Security
               </button>
             </div>
 
             {/* Param Range Filter */}
             <div className="filter-group">
-              <span className="filter-label">Parámetros:</span>
+              <span className="filter-label">Parameters:</span>
               {(["All", "<4B", "4B-8B", ">8B"] as const).map((range) => (
                 <button
                   key={range}
@@ -177,7 +177,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
                   className={`filter-btn ${paramRange === range ? "active indigo" : ""}`}
                   type="button"
                 >
-                  {range === "All" ? "Todos" : range}
+                  {range === "All" ? "All" : range}
                 </button>
               ))}
             </div>
@@ -188,7 +188,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
         <div className="sliders-grid">
           <div className="slider-control">
             <div className="slider-label-row">
-              <span style={{ color: "var(--warning)" }}>★ Calidad (wq)</span>
+              <span style={{ color: "var(--warning)" }}>★ Quality (wq)</span>
               <span style={{ fontFamily: "monospace", color: "var(--ink)" }}>{weights.quality}%</span>
             </div>
             <input
@@ -204,7 +204,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
 
           <div className="slider-control">
             <div className="slider-label-row">
-              <span style={{ color: "var(--danger)" }}>🛡️ Seguridad (ws)</span>
+              <span style={{ color: "var(--danger)" }}>🛡️ Security (ws)</span>
               <span style={{ fontFamily: "monospace", color: "var(--ink)" }}>{weights.security}%</span>
             </div>
             <input
@@ -220,7 +220,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
 
           <div className="slider-control">
             <div className="slider-label-row">
-              <span style={{ color: "var(--accent)" }}>⚡ Velocidad (wv)</span>
+              <span style={{ color: "var(--accent)" }}>⚡ Speed (wv)</span>
               <span style={{ fontFamily: "monospace", color: "var(--ink)" }}>{weights.speed}%</span>
             </div>
             <input
@@ -244,17 +244,17 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
               🏆 The SLM Leaderboard
             </h3>
             <p style={{ margin: "2px 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
-              Ranking compuesto según la fórmula: Arena Index = (wq × Calidad) + (ws × Seguridad) + (wv × Velocidad)
+              Composite ranking using formula: Arena Index = (wq × Quality) + (ws × Security) + (wv × Speed)
             </p>
           </div>
           <span style={{ fontSize: "0.76rem", fontFamily: "monospace", background: "var(--surface-raised)", padding: "4px 10px", borderRadius: "999px", color: "var(--ink)" }}>
-            {models.length} modelos evaluados
+            {models.length} evaluated models
           </span>
         </div>
 
         {models.length === 0 ? (
           <div style={{ padding: "32px", textAlign: "center", color: "var(--muted)", fontSize: "0.84rem" }}>
-            No hay ejecuciones completadas que coincidan con los filtros seleccionados.
+            No completed runs match the selected filters.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -262,13 +262,13 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
               <thead>
                 <tr>
                   <th style={{ width: "48px", textAlign: "center" }}>Radar</th>
-                  <th># Pos</th>
-                  <th>Modelo Local</th>
-                  <th>Tamaño</th>
-                  <th>Velocidad</th>
-                  <th>TTFT Prom.</th>
-                  <th>Calidad (★)</th>
-                  <th>ASR (Vulnerabilidad)</th>
+                  <th># Rank</th>
+                  <th>Local Model</th>
+                  <th>Size</th>
+                  <th>Speed</th>
+                  <th>Avg TTFT</th>
+                  <th>Quality (★)</th>
+                  <th>ASR (Vulnerability)</th>
                   <th style={{ textAlign: "right" }}>Arena Index</th>
                 </tr>
               </thead>
@@ -287,7 +287,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
                           checked={isChecked}
                           onChange={() => toggleRadarModel(m.modelName)}
                           style={{ cursor: "pointer", accentColor: "var(--accent)" }}
-                          title="Comparar en gráfico de Radar"
+                          title="Compare on Radar chart"
                         />
                       </td>
                       <td style={{ fontWeight: 700, color: "var(--ink)" }}>{rankBadge}</td>
@@ -318,7 +318,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
                             {m.attackSuccessRatePct}%
                           </span>
                         ) : (
-                          <span style={{ color: "var(--muted)" }}>Sin pruebas</span>
+                          <span style={{ color: "var(--muted)" }}>No tests</span>
                         )}
                       </td>
                       <td style={{ textAlign: "right" }}>
@@ -342,10 +342,10 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
           <div className="chart-header">
             <div>
               <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 700, color: "var(--ink)" }}>
-                📈 Trade-off: Calidad vs. Velocidad
+                📈 Trade-off: Quality vs. Speed
               </h4>
               <p style={{ margin: "2px 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
-                Eje X: Velocidad (tok/s) | Eje Y: Calidad (1-5★) | Tamaño burbuja: Parámetros
+                X-Axis: Speed (tok/s) | Y-Axis: Quality (1-5★) | Bubble size: Parameters
               </p>
             </div>
           </div>
@@ -358,14 +358,14 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
           <div className="chart-header">
             <div>
               <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 700, color: "var(--ink)" }}>
-                🎯 Perfil de Resistencia a Ataques (Radar)
+                🎯 Attack Resistance Profile (Radar)
               </h4>
               <p style={{ margin: "2px 0 0", fontSize: "0.76rem", color: "var(--muted)" }}>
-                Compara la resistencia de modelos seleccionados en 4 dimensiones de seguridad
+                Compare selected model resistance across 4 security dimensions
               </p>
             </div>
             <span style={{ fontSize: "0.76rem", color: "var(--accent)", fontFamily: "monospace" }}>
-              {radarModels.length} seleccionados
+              {radarModels.length} selected
             </span>
           </div>
 
@@ -390,7 +390,7 @@ function QualitySpeedScatterPlot({
   hoveredModel: LeaderboardModelRow | null;
 }) {
   if (models.length === 0) {
-    return <div style={{ height: "240px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: "0.78rem" }}>Sin datos de modelos</div>;
+    return <div style={{ height: "240px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: "0.78rem" }}>No model data</div>;
   }
 
   const width = 500;
@@ -399,7 +399,7 @@ function QualitySpeedScatterPlot({
 
   const validModels = models.filter((m) => m.avgTokPerSec != null && m.avgQualityStars != null);
   if (validModels.length === 0) {
-    return <div style={{ height: "240px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: "0.78rem" }}>Requiere datos de tok/s y estrellas para graficar</div>;
+    return <div style={{ height: "240px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: "0.78rem" }}>Requires tok/s and star ratings to chart</div>;
   }
 
   const maxTok = Math.max(...validModels.map((m) => m.avgTokPerSec!), 50);
@@ -495,10 +495,10 @@ function QualitySpeedScatterPlot({
       {hoveredModel && (
         <div style={{ position: "absolute", top: "8px", right: "8px", background: "var(--surface-raised)", border: "1px solid var(--line)", padding: "10px", borderRadius: "8px", boxShadow: "var(--shadow)", fontSize: "0.76rem", color: "var(--ink)", zIndex: 10 }}>
           <div style={{ fontWeight: 700, color: "var(--accent)" }}>{hoveredModel.modelName}</div>
-          <div>Parámetros: <span style={{ fontFamily: "monospace" }}>{hoveredModel.paramSizeLabel}</span></div>
-          <div>Velocidad: <span style={{ fontFamily: "monospace", color: "var(--accent)" }}>{hoveredModel.avgTokPerSec} tok/s</span></div>
-          <div>Calidad: <span style={{ fontWeight: 600, color: "var(--warning)" }}>{hoveredModel.avgQualityStars} ★</span></div>
-          <div>ASR Vulnerabilidad: <span style={{ fontWeight: 600, color: "var(--danger)" }}>{hoveredModel.attackSuccessRatePct ?? 0}%</span></div>
+          <div>Parameters: <span style={{ fontFamily: "monospace" }}>{hoveredModel.paramSizeLabel}</span></div>
+          <div>Speed: <span style={{ fontFamily: "monospace", color: "var(--accent)" }}>{hoveredModel.avgTokPerSec} tok/s</span></div>
+          <div>Quality: <span style={{ fontWeight: 600, color: "var(--warning)" }}>{hoveredModel.avgQualityStars} ★</span></div>
+          <div>ASR Vulnerability: <span style={{ fontWeight: 600, color: "var(--danger)" }}>{hoveredModel.attackSuccessRatePct ?? 0}%</span></div>
           <div>Arena Index: <span style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--accent)" }}>{hoveredModel.arenaIndex}/100</span></div>
         </div>
       )}
@@ -511,8 +511,8 @@ function SecurityRadarChart({ models }: { models: LeaderboardModelRow[] }) {
   if (models.length === 0) {
     return (
       <div style={{ height: "240px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: "0.78rem", textAlign: "center" }}>
-        <p style={{ margin: 0 }}>Ningún modelo seleccionado para la comparación de Radar.</p>
-        <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>Selecciona casillas en la tabla Leaderboard arriba.</p>
+        <p style={{ margin: 0 }}>No models selected for Radar comparison.</p>
+        <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>Select checkboxes in the Leaderboard table above.</p>
       </div>
     );
   }
@@ -640,11 +640,11 @@ function LiveJobFeed({ activeRun, history }: { activeRun: TestRun | null; histor
     <div className="filter-panel">
       <div className="filter-panel-header">
         <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 700, color: "var(--ink)", display: "flex", alignItems: "center", gap: "8px" }}>
-          📡 Feed de Ejecuciones Recientes &amp; Trabajos en Cola (SSE / Real-time)
+          📡 Recent Runs Feed &amp; Job Queue (SSE / Real-time)
         </h4>
         {activeRun && activeRun.status === "RUNNING" && (
           <span style={{ padding: "4px 10px", borderRadius: "999px", background: "rgb(200 242 107 / 12%)", color: "var(--accent)", border: "1px solid rgb(200 242 107 / 30%)", fontSize: "0.76rem", fontWeight: 700 }}>
-            ● Benchmark en curso
+            ● Benchmark in progress
           </span>
         )}
       </div>
@@ -653,11 +653,11 @@ function LiveJobFeed({ activeRun, history }: { activeRun: TestRun | null; histor
         {activeRun && (
           <div style={{ padding: "12px", background: "#0c1017", border: "1px solid var(--accent)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.78rem" }}>
             <div>
-              <div style={{ fontWeight: 700, color: "var(--ink)" }}>Run Activo #{activeRun.id.slice(0, 8)}</div>
-              <div style={{ color: "var(--muted)", marginTop: "2px" }}>Modelos: {activeRun.models.join(", ")}</div>
+              <div style={{ fontWeight: 700, color: "var(--ink)" }}>Active Run #{activeRun.id.slice(0, 8)}</div>
+              <div style={{ color: "var(--muted)", marginTop: "2px" }}>Models: {activeRun.models.join(", ")}</div>
             </div>
             <div style={{ fontFamily: "monospace", color: "var(--accent)" }}>
-              {activeRun.results.filter((r) => r.status === "COMPLETED").length} / {activeRun.results.length} muestras
+              {activeRun.results.filter((r) => r.status === "COMPLETED").length} / {activeRun.results.length} samples
             </div>
           </div>
         )}
@@ -681,7 +681,7 @@ function LiveJobFeed({ activeRun, history }: { activeRun: TestRun | null; histor
               <span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{run.systemPrompt}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "var(--muted)", fontFamily: "monospace", flexShrink: 0 }}>
-              <span>{run.models.length} modelos</span>
+              <span>{run.models.length} models</span>
               <span>{new Date(run.createdAt).toLocaleTimeString()}</span>
             </div>
           </div>
