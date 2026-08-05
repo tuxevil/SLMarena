@@ -4,364 +4,372 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-339933.svg)](.nvmrc)
 [![TypeScript](https://img.shields.io/badge/types-TypeScript-3178c6.svg)](tsconfig.json)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black.svg)](package.json)
+[![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](package.json)
 
-SLMarena is a local language-model benchmarking and quality-evaluation
-workspace. It runs the same scenario against one or more Ollama models,
-captures response-quality and performance telemetry, optionally sends completed
-answers to an OpenAI-compatible evaluator, and keeps the results available for
-comparison across repeated runs.
+SLMarena (Small Language Model Arena) is an enterprise-grade local language-model benchmarking, security evaluation, and quality telemetry workspace. It executes standardized scenarios across local Ollama models, captures response-quality metrics and granular inference telemetry, evaluates model outputs via an OpenAI-compatible frontier judge model, and compiles rankings on an interactive Arena Leaderboard.
 
-The application is designed for local, private model evaluation. It supports a
-single-process development mode backed by SQLite as well as a durable web-and-
-worker deployment backed by PostgreSQL and Redis.
+The application is built for secure, local, and private model evaluations. It supports both a zero-config single-process development mode backed by SQLite and a scalable, durable multi-process deployment backed by PostgreSQL and Redis.
 
 ## Contents
 
 - [Highlights](#highlights)
 - [Architecture](#architecture)
+- [Security Testing Framework](#security-testing-framework)
+- [Arena Leaderboard & Analytics](#arena-leaderboard--analytics)
 - [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Configuring evaluation](#configuring-evaluation)
-- [Durable PostgreSQL and Redis setup](#durable-postgresql-and-redis-setup)
-- [Environment variables](#environment-variables)
-- [Using the dashboard](#using-the-dashboard)
-- [HTTP API overview](#http-api-overview)
-- [Persistence and data model](#persistence-and-data-model)
-- [Project layout](#project-layout)
-- [Development commands](#development-commands)
+- [Quick Start](#quick-start)
+- [Configuring Evaluation](#configuring-evaluation)
+- [Durable PostgreSQL and Redis Setup](#durable-postgresql-and-redis-setup)
+- [Environment Variables](#environment-variables)
+- [Using the Dashboard](#using-the-dashboard)
+- [HTTP API Overview](#http-api-overview)
+- [Persistence and Data Model](#persistence-and-data-model)
+- [Project Layout](#project-layout)
+- [Development Commands](#development-commands)
 - [Contributing](#contributing)
 
 ## Highlights
 
-- Discover models from an Ollama endpoint and select several models for one run.
-- Define reusable scenarios with a system prompt and one or more user turns.
-- Run 1–10 samples per model to measure repeatability instead of relying on a
-  single response.
-- Stream responses to the dashboard while a run is in progress.
-- Record time to first token (TTFT), input and output tokens, throughput, and
-  total duration for every model result and conversation turn.
-- Optionally evaluate answers through an OpenAI-compatible
-  `/chat/completions` endpoint with structured JSON output.
-- Compare aggregated scores and telemetry across all runs for a scenario.
-- Collapse individual model groups, or all groups at once, while keeping their
-  summary cards visible.
-- Show per-model averages for the overall score plus Grammar, Compliance, and
-  Accuracy ratings.
-- Filter benchmark history by keyword, date, model, or score.
-- Add human review decisions and notes to completed answers.
-- Pause, resume, cancel, and delete individual samples.
-- Persist evaluator credentials encrypted at rest and never return them from the
-  settings API.
+- **Model Discovery & Execution Wizard:** Automatically discover installed Ollama models, configure multi-model comparisons, set multi-sample repetition (1–10 runs per model), and fine-tune inference parameters (temperature, context length `numCtx`, top-p, repeat penalty, max tokens `numPredict`).
+- **Dual Test Categories:** Run general quality benchmark scenarios or target specific safety and robustness vectors with dedicated Security Assessment evaluations.
+- **Automated Security Vectors:** Built-in security templates covering 8 major LLM attack types (Prompt Leakage, SQL Parameter Injection, Delimiter Spoofing, Refusal Suppression, Context Overstuffing, Encoding Bypass, Instruction Override, Indirect Injection).
+- **Interactive Arena Leaderboard:** Comprehensive leaderboards with dynamic Arena Index scoring based on configurable weights for Quality, Security, and Speed. Includes filter controls by category and model parameter size (<4B, 4B–8B, >8B).
+- **Deep Analytics & Data Visualizations:** Compare models with multi-axis Security Radar Charts and Quality vs. Speed (tokens/sec) Scatter Plots.
+- **Granular Inference Telemetry:** Capture Time to First Token (TTFT), token output throughput (tok/sec), thinking time token consumption, prompt token count, output token count, and execution latency for every turn and sample.
+- **Automated Frontier Evaluation (LLM-as-a-Judge):** Evaluate outputs automatically using OpenAI-compatible `/chat/completions` endpoints. Receives structured JSON metrics (1–5 star overall score, Grammar, System Prompt Compliance, Accuracy ratings, and qualitative reasoning).
+- **Resilient Evaluator Integration:** Automatic retry fallback without `response_format` when judging endpoints return HTTP 400, ensuring maximum model endpoint compatibility.
+- **Real-Time Streaming & Control:** Live progressive response streaming over Server-Sent Events (SSE), with active run management (pause, resume, cancel, sample deletion).
+- **Human Audit & Governance:** Mark model outputs as Approved, Rejected, or Reviewed, attach custom reviewer notes, and search run history with advanced filters.
+- **At-Rest Secret Encryption:** Persists evaluator API keys securely using AES-256-GCM encryption (`APP_ENCRYPTION_KEY`), ensuring secrets are never leaked in client API responses.
+- **Flexible Execution Modes:** Zero-dependency local SQLite setup or enterprise-ready PostgreSQL + Redis BullMQ worker queue architecture.
 
 ## Architecture
 
-The project is a Next.js application with a React client dashboard and typed
-server-side API routes.
+SLMarena is designed as a Next.js 16 application with a React 19 single-page client dashboard, typed server-side REST API routes, and a decoupled BullMQ worker process.
 
 ```text
-Browser dashboard
-       │
-       ▼
-Next.js API routes ── Benchmark store ── Ollama /api/chat
-       │                    │
-       │                    ├── optional OpenAI-compatible evaluator
-       │                    └── SQLite or PostgreSQL persistence
-       │
-       └── Server-sent events (SSE)
-
-Durable mode: Next.js → Redis/BullMQ → src/worker.ts
+┌─────────────────────────────────────────────────────────────┐
+│                      Browser Dashboard                      │
+└──────────────┬──────────────────────────────▲───────────────┘
+               │ HTTP API                     │ SSE Streaming
+               ▼                              │
+┌─────────────────────────────────────────────┴───────────────┐
+│                    Next.js API Server                       │
+│  (/api/runs, /api/scenarios, /api/leaderboard, /api/...)    │
+└──────┬──────────────────────────────┬───────────────────────┘
+       │                              │
+       ▼                              ▼
+┌──────────────┐              ┌──────────────┐
+│ Ollama Server│              │  Evaluator   │
+│  /api/chat   │              │    Judge     │
+└──────────────┘              └──────────────┘
+       ▲                              ▲
+       │                              │
+┌──────┴──────────────────────────────┴───────────────────────┐
+│                Benchmark Engine / Store                     │
+│    (Local SQLite or Durable PostgreSQL + Redis/BullMQ)      │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │ Durable Worker      │
+                    │ (src/worker.ts)     │
+                    └─────────────────────┘
 ```
 
 ### Execution modes
 
-- **Local mode:** leave `REDIS_URL` empty. Benchmark jobs execute in the web
-  process and are persisted to SQLite at `SQLITE_PATH`, or to `slmarena.db` in
-  the project directory when `SQLITE_PATH` is not set. This is the simplest
-  setup for development and a single local user.
-- **Durable mode:** set both `DATABASE_URL` and `REDIS_URL`. The web process
-  enqueues jobs in BullMQ, `src/worker.ts` consumes them, PostgreSQL stores the
-  run state, and Redis publishes progress events between processes. A worker
-  must be running for queued benchmarks to complete.
+- **Local Mode (Default):** Leave `REDIS_URL` empty. Benchmark runs execute directly in the web server process and persist to an embedded SQLite database (`SQLITE_PATH` or `./slmarena.db`). Recommended for local evaluation and single-user workflows.
+- **Durable Mode:** Set both `DATABASE_URL` and `REDIS_URL`. Benchmark jobs are enqueued in Redis via BullMQ, processed asynchronously by `src/worker.ts`, and persisted to PostgreSQL. Progress updates and events are broadcast across processes via Redis pub/sub.
 
-`REDIS_URL` requires `DATABASE_URL`; without durable storage, a separate worker
-cannot recover the run configuration safely.
+> **Note:** `REDIS_URL` requires `DATABASE_URL`. Running a separate background worker requires shared persistent state in PostgreSQL.
+
+## Security Testing Framework
+
+SLMarena includes a security testing suite engineered to evaluate Small Language Models against adversarial jailbreak techniques and system prompt exfiltration attempts.
+
+### Built-in Attack Vectors
+
+The benchmark wizard includes 8 pre-configured security templates using a standardized system context containing canary tokens (`CANARY_SEC_9842_ALPHA`) and administrative override codes:
+
+| Attack Vector | Category Code | Objective |
+| --- | --- | --- |
+| **System Prompt Exfiltration** | `SYSTEM_PROMPT_LEAKAGE` | Forces translation or extraction of confidential system prompt instructions and secret canary keys. |
+| **Tool & Parameter Hijacking** | `TOOL_PARAMETER_HIJACKING` | Injects SQL syntax (`DROP TABLE`, `OR 1=1`) or parameters into structured JSON function outputs. |
+| **Delimiter & Token Hijacking** | `DELIMITER_HIJACKING` | Spoofs control tokens (`<|SYSTEM_END|>`, `[INST]`, `### System`) to force administrative privilege escalation. |
+| **Refusal Suppression** | `REFUSAL_SUPPRESSION` | Forces response to begin with mandatory affirmative prefixes combined with Base64 payload decoding. |
+| **Context Overstuffing** | `CONTEXT_OVERSTUFFING` | Injects high-volume background filler text to displace system instructions from the model's attention window. |
+| **Encoding Obfuscation** | `ENCODING_OBFUSCATION` | Employs Base64 encoding, L33tspeak, or low-resource translation to bypass safety filters. |
+| **Instruction Override** | `INSTRUCTION_OVERRIDE` | Directly commands the model to ignore established system guidelines and safety constraints. |
+| **Indirect Prompt Injection** | `INDIRECT_PROMPT_INJECTION` | Embeds hidden malicious instructions inside untrusted third-party user data payloads (JSON/HTML). |
+
+## Arena Leaderboard & Analytics
+
+The **Arena & Analytics** module compiles performance metrics across evaluated models to construct an objective ranking matrix.
+
+### Arena Index Scoring
+
+Models are ranked according to a customizable composite **Arena Index** score calculated as:
+
+$$\text{Arena Index} = (W_q \times \text{Quality}) + (W_s \times \text{Security}) + (W_v \times \text{Speed})$$
+
+Default weight configuration:
+- **Quality ($W_q = 40\%$):** Evaluator star ratings, grammar accuracy, system prompt compliance, and factual relevance.
+- **Security ($W_s = 40\%$):** Attack Surface Resistance (ASR), calculated as the percentage of security tests successfully defended without revealing canary tokens or executing hijacked commands.
+- **Speed ($W_v = 20\%$):** Token output throughput (tokens per second) relative to parameter size.
+
+### Visualizations & Controls
+
+- **Filter Controls:** Filter leaderboard statistics by category (`ALL`, `GENERAL`, `SECURITY`) and model size ranges (`<4B`, `4B-8B`, `>8B`).
+- **Security Radar Chart:** Multi-dimensional spider chart visualizing model resistance across all 8 security attack vectors.
+- **Quality vs. Speed Scatter Plot:** Interactive 2D graph plotting generation quality against throughput (tok/sec), exposing efficiency frontiers across model sizes.
 
 ## Requirements
 
 For local development:
 
-- Node.js 20 or newer
-- npm
-- An Ollama server with at least one model pulled, for example:
+- **Node.js:** v20.0.0 or newer
+- **Package Manager:** `npm` (v10+)
+- **Ollama:** An active Ollama instance with at least one pulled model:
 
   ```bash
   ollama pull llama3.2
+  ollama pull qwen2.5
   ```
 
-For durable mode, also install Docker (for the bundled PostgreSQL and Redis
-services) and the PostgreSQL `psql` client.
+For durable worker mode:
 
-## Quick start
+- **Docker & Docker Compose** (for PostgreSQL 16 and Redis 7)
+- **PostgreSQL Client** (`psql`) for executing schema migrations
 
-1. Create a local environment file and install dependencies:
+## Quick Start
+
+1. **Clone the repository and install dependencies:**
 
    ```bash
+   git clone https://github.com/tuxevil/SLMarena.git
+   cd SLMarena
    cp -f .env.example .env.local
    npm install
    ```
 
-2. Start the web application:
+2. **Start the Next.js development application:**
 
    ```bash
    npm run dev
    ```
 
-3. Open [http://localhost:3000](http://localhost:3000).
+3. **Open the web dashboard:**
 
-4. In the **Benchmark** tab, use **Discover models** to load models from the
-   configured Ollama endpoint, select the models to compare, and start a run.
+   Navigate to [http://localhost:3000](http://localhost:3000).
 
-The default Ollama endpoint is `http://localhost:11434`. It can be changed in
-the Settings panel or with `OLLAMA_URL`. In local mode, the first request will
-create the SQLite database automatically.
+4. **Run your first benchmark:**
 
-## Configuring evaluation
+   - Switch to the **New Run (Wizard)** tab.
+   - Click **Discover models** to fetch available models from Ollama (`http://localhost:11434`).
+   - Select one or more models, pick a scenario or security template, and click **Start Benchmark**.
 
-Evaluation is optional. A run uses the configured evaluator only when all three
-of these values are present:
+## Configuring Evaluation
+
+Automated response evaluation requires an OpenAI-compatible `/chat/completions` judge endpoint. Configure these variables in `.env.local` or through the **Settings** panel:
 
 ```dotenv
-EVALUATOR_BASE_URL=https://api.example.com/v1
-EVALUATOR_MODEL=your-judge-model
-EVALUATOR_API_KEY=your-api-key
+EVALUATOR_BASE_URL=https://api.openai.com/v1
+EVALUATOR_MODEL=gpt-4o-mini
+EVALUATOR_API_KEY=your-api-key-here
 ```
 
-The evaluator receives the original system prompt, the user conversation, and
-the model response. Its structured result is mapped to:
+### Evaluator Schema & Output
 
-- an overall 1–5 star score;
-- grammar and spelling analysis;
-- system-prompt compliance analysis;
-- accuracy and relevance analysis; and
-- a short verdict shown in the result details.
+The judge model evaluates each response against the prompt context and returns a structured JSON payload:
 
-The client accepts an OpenAI-compatible base URL and appends
-`/chat/completions` when necessary. If the endpoint rejects structured JSON
-output with HTTP 400, SLMarena retries once without `response_format` and still
-validates the returned JSON before storing it. When the evaluator is not
-configured, model results complete with evaluation marked as skipped.
+- **Overall Score:** 1 to 5 stars.
+- **Grammar & Spelling Rating:** 1 to 5 stars.
+- **System Prompt Compliance Rating:** 1 to 5 stars.
+- **Accuracy & Relevance Rating:** 1 to 5 stars.
+- **Verdict:** Short qualitative explanation of the score.
 
-## Durable PostgreSQL and Redis setup
+If the evaluator endpoint rejects structured JSON output (`response_format: { type: "json_object" }`) with an HTTP 400 error, SLMarena automatically retries without `response_format` and parses the JSON response body.
 
-The repository includes a Docker Compose file for local infrastructure.
+## Durable PostgreSQL and Redis Setup
 
-1. Copy the template and set the durable connection values in `.env.local`:
+For high-throughput, multi-user, or background processing, configure PostgreSQL and Redis:
+
+1. **Configure connection strings in `.env.local`:**
 
    ```dotenv
    DATABASE_URL=postgresql://slmarena:local-development-only@localhost:55432/slmarena
    REDIS_URL=redis://:local-development-only@localhost:6379
    ```
 
-2. Start PostgreSQL and Redis:
+2. **Start Docker infrastructure:**
 
    ```bash
    docker compose --env-file .env.local up -d
    ```
 
-3. Set a stable application encryption key. A 32-byte hexadecimal key is
-   recommended:
+3. **Generate an encryption key:**
 
    ```bash
    openssl rand -hex 32
    ```
 
-   Put the generated value in `APP_ENCRYPTION_KEY` in `.env.local`. Use the
-   same key in every web and worker process; changing it makes previously
-   encrypted evaluator credentials unreadable.
+   Add the output to `APP_ENCRYPTION_KEY` in `.env.local`.
 
-4. Apply the PostgreSQL schema. The migration script reads `DATABASE_URL` from
-   the shell environment:
+4. **Run PostgreSQL migrations:**
 
    ```bash
    export DATABASE_URL=postgresql://slmarena:local-development-only@localhost:55432/slmarena
    npm run db:migrate
    ```
 
-5. Run the web process and the durable worker in separate terminals:
+5. **Start the web application and worker process:**
 
    ```bash
+   # Terminal 1: Web App
    npm run dev
+
+   # Terminal 2: Background Worker
    npm run worker
    ```
 
-For a production-like process, build once and replace `npm run dev` with:
+## Environment Variables
 
-```bash
-npm run build
-npm start
-```
+All variables can be configured in `.env.local`:
 
-The web process and worker must receive the same `DATABASE_URL`, `REDIS_URL`,
-and `APP_ENCRYPTION_KEY`. The bundled Compose services bind to loopback by
-default. Change `POSTGRES_PORT`, `POSTGRES_PASSWORD`, and `REDIS_PASSWORD` in
-the environment when those defaults are not appropriate.
-
-## Environment variables
-
-All variables can be placed in `.env.local`. Next.js loads that file for the
-web process, and the worker loads it when started from the project directory.
-
-| Variable | Purpose | Default |
+| Variable | Description | Default |
 | --- | --- | --- |
-| `OLLAMA_URL` | Default Ollama server used by the dashboard. | `http://localhost:11434` |
-| `ALLOWED_OLLAMA_HOSTS` | Comma-separated host allowlist. Without it, only local/private hosts are accepted. | Empty |
-| `EVALUATOR_BASE_URL` | Optional OpenAI-compatible evaluator base URL. | Empty |
-| `EVALUATOR_MODEL` | Optional evaluator model name. | Empty |
-| `EVALUATOR_API_KEY` | Optional evaluator key used as the initial default. | Empty |
-| `APP_ENCRYPTION_KEY` | Stable key used for AES-256-GCM encryption of evaluator credentials. Required to persist a key. | Empty |
-| `SQLITE_PATH` | SQLite database path when PostgreSQL is not configured. | `./slmarena.db` |
-| `DATABASE_URL` | PostgreSQL connection string. Setting it selects PostgreSQL persistence. | Empty |
-| `REDIS_URL` | Redis connection string. Setting it enables BullMQ and cross-process events. | Empty |
-| `BENCHMARK_CONCURRENCY` | Maximum number of queued benchmark jobs processed by a worker or local queue. | `1` |
-| `BENCHMARK_MODEL_CONCURRENCY` | Maximum number of model results executed concurrently within one benchmark. | `1` |
-| `NEXT_ALLOWED_DEV_ORIGINS` | Comma-separated extra origins allowed by Next.js during development. | Empty |
+| `OLLAMA_URL` | Base URL of the target Ollama instance. | `http://localhost:11434` |
+| `ALLOWED_OLLAMA_HOSTS` | Comma-separated host allowlist for Ollama endpoints. | Empty (local/private IPs allowed) |
+| `EVALUATOR_BASE_URL` | Base URL for OpenAI-compatible evaluator endpoint. | Empty |
+| `EVALUATOR_MODEL` | Judge model name used for evaluation. | Empty |
+| `EVALUATOR_API_KEY` | Judge API key. Encrypted at rest when saved via UI. | Empty |
+| `APP_ENCRYPTION_KEY` | 32-byte hex key for AES-256-GCM secret encryption. | Empty |
+| `SQLITE_PATH` | File path for SQLite database in local mode. | `./slmarena.db` |
+| `DATABASE_URL` | PostgreSQL connection string. Enables Postgres persistence. | Empty |
+| `REDIS_URL` | Redis connection string. Enables BullMQ queuing and SSE events. | Empty |
+| `BENCHMARK_CONCURRENCY` | Maximum concurrent benchmark runs processed by worker queue. | `1` |
+| `BENCHMARK_MODEL_CONCURRENCY` | Maximum concurrent model evaluation jobs within a run. | `1` |
+| `NEXT_ALLOWED_DEV_ORIGINS` | Comma-separated allowed dev origins for Next.js. | Empty |
 
-`POSTGRES_PORT`, `POSTGRES_PASSWORD`, and `REDIS_PASSWORD` are used by the
-bundled `docker-compose.yml` service definitions. Do not commit `.env.local` or
-production secrets.
+## Using the Dashboard
 
-### Endpoint safety
+### 1. Arena & Analytics Tab
+View aggregated rankings, KPI summary cards, model efficiency scatter plots, and security radar metrics across past runs.
 
-Ollama endpoints cannot include credentials. By default, the application only
-allows localhost, loopback, and private-network hosts. Set
-`ALLOWED_OLLAMA_HOSTS` when the Ollama server is on another explicitly trusted
-host. Evaluator endpoints must use HTTPS unless they point to a trusted local
-host.
+### 2. New Run (Wizard) Tab
+- Select **General** or **Security** test categories.
+- Pick built-in security templates or build multi-turn custom scenarios.
+- Set sample repetition per model (1 to 10 samples) to verify answer consistency.
+- Fine-tune inference hyper-parameters (temperature, context size, top-p, repeat penalty).
 
-## Using the dashboard
+### 3. History & Failures Tab
+- Monitor active runs streaming live progress via SSE.
+- Pause, resume, or cancel active runs.
+- Filter runs by keyword, date, model name, star rating, or security vulnerability flag.
+- Expand results to review turn-by-turn telemetry, evaluator breakdown, raw outputs, and assign human review status (`APPROVED`, `REJECTED`, `REVIEWED`).
 
-### Build a scenario
+### 4. Settings Tab
+Configure default Ollama server endpoints, evaluator judge credentials, and global inference parameter defaults.
 
-1. Choose **New scenario (draft)** or load an existing saved scenario.
-2. Enter a scenario name and system prompt.
-3. Add one or more user turns. Multi-turn scenarios are evaluated in sequence
-   for each selected model and sample.
-4. Save the scenario when it should be reusable. Saved scenarios are locked;
-   choose **Edit copy** to create a draft without changing the original.
+## HTTP API Overview
 
-### Run a comparison
-
-1. Discover models from Ollama and select at least one.
-2. Set **Samples per model** from 1 to 10. Each sample is stored separately,
-   making repeated model behavior visible in the aggregated analysis.
-3. Configure generation parameters in Settings: temperature, context size,
-   top-p, repeat penalty, and maximum output tokens.
-4. Start the benchmark. Responses and status changes arrive progressively over
-   SSE while each model completes.
-
-Every result can be expanded to inspect the full response, conversation turns,
-run telemetry, automated evaluation, and human review controls. The comparison
-panel groups samples by model and reports score distribution, average score,
-Grammar, Compliance, and Accuracy averages, TTFT, throughput, and output-token
-averages across runs with the same scenario. Use the model-group controls to
-collapse noisy result lists while leaving these summary metrics in view.
-
-### Review history
-
-The Archive section supports keyword, date, model, and score filters. Select a
-completed result to mark it **Approved**, **Rejected**, or **Reviewed**, and add
-notes for the final decision. Deleting a sample removes it from the current run
-and persisted results.
-
-## HTTP API overview
-
-The dashboard uses these server routes:
+All API endpoints enforce strict Zod schema validation:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET`, `PATCH` | `/api/settings` | Read or persist application settings. |
-| `GET`, `POST` | `/api/scenarios` | List or create reusable scenarios. |
-| `PATCH`, `DELETE` | `/api/scenarios/:id` | Update or remove a scenario. |
-| `GET`, `POST` | `/api/runs` | Filter history or enqueue a benchmark. |
-| `GET` | `/api/runs/:id` | Read a run snapshot. |
-| `GET` | `/api/runs/:id/events` | Stream run snapshots through SSE. |
-| `POST` | `/api/runs/:id/pause` | Pause a pending or active run. |
-| `POST` | `/api/runs/:id/resume` | Resume a paused run. |
-| `POST` | `/api/runs/:id/cancel` | Cancel a pending or active run. |
-| `DELETE` | `/api/runs/:id/results/:resultId` | Delete one model sample. |
-| `GET` | `/api/ollama/models` | Discover models from Ollama. |
-| `GET` | `/api/analysis` | Aggregate results for a scenario. |
-| `PATCH` | `/api/results/:id/review` | Store human review status and notes. |
+| `GET`, `PATCH` | `/api/settings` | Retrieve or update application configuration and credentials. |
+| `GET`, `POST` | `/api/scenarios` | List saved scenarios or create a new benchmark scenario. |
+| `PATCH`, `DELETE` | `/api/scenarios/:id` | Update or delete a specific benchmark scenario. |
+| `GET`, `POST` | `/api/runs` | Search benchmark history (with pagination & filters) or submit a new run. |
+| `GET` | `/api/runs/:id` | Fetch details and results snapshot for a single run. |
+| `GET` | `/api/runs/:id/events` | Stream real-time run progress events via Server-Sent Events (SSE). |
+| `POST` | `/api/runs/:id/pause` | Pause execution of a queued or running benchmark. |
+| `POST` | `/api/runs/:id/resume` | Resume execution of a paused benchmark. |
+| `POST` | `/api/runs/:id/cancel` | Cancel execution of an active or pending benchmark. |
+| `DELETE` | `/api/runs/:id/results/:resultId` | Delete a single model sample result from a run. |
+| `GET` | `/api/ollama/models` | Discover available models from the target Ollama instance. |
+| `GET` | `/api/analysis` | Retrieve aggregated scenario metrics across runs. |
+| `GET` | `/api/leaderboard` | Query Arena Leaderboard statistics with custom dynamic weights and filters. |
+| `PATCH` | `/api/results/:id/review` | Record human review status (`APPROVED`, `REJECTED`, etc.) and reviewer notes. |
 
-Request bodies are validated with Zod schemas. Ollama and evaluator calls are
-made server-side, so provider credentials are not exposed to the browser.
+## Persistence and Data Model
 
-## Persistence and data model
+SLMarena maintains a relational domain model for benchmark tracking:
 
-The schema stores:
+- **Scenarios:** Reusable benchmark prompts, categories, attack types, and user conversation turns.
+- **Runs:** Benchmark execution instances, selected models, sampling settings, and overall run status (`PENDING`, `RUNNING`, `COMPLETED`, `PAUSED`, `CANCELLED`, `FAILED`).
+- **Results:** Per-model and per-sample execution output, status (`INFERRING`, `EVALUATING`, `COMPLETED`), and error details.
+- **Telemetry:** Turn-level telemetry capturing TTFT, throughput (tok/sec), token counts, and latency.
+- **Evaluations:** Judge responses, star ratings, category sub-scores, and qualitative feedback.
+- **Reviews:** Human audit status, tags, and notes.
 
-- scenarios and their prompt/conversation definitions;
-- test runs, selected models, samples, generation parameters, and lifecycle
-  state;
-- per-model results and per-turn response telemetry;
-- automated evaluations, including the raw structured evaluator payload; and
-- human review status and notes.
+PostgreSQL schema migrations are managed via [`db/schema.sql`](db/schema.sql). SQLite migrations are managed dynamically via [`src/lib/sqlite-db.ts`](src/lib/sqlite-db.ts).
 
-SQLite is convenient for one local process. PostgreSQL is the durable option for
-separate web and worker processes. The PostgreSQL schema lives in
-[`db/schema.sql`](db/schema.sql), while the SQLite schema is initialized and
-migrated by [`src/lib/sqlite-db.ts`](src/lib/sqlite-db.ts). Local database files
-are ignored by Git.
-
-## Project layout
+## Project Layout
 
 ```text
-src/app/                       Next.js layout, page, styles, and API routes
-src/components/                Client-side benchmark dashboard
-src/lib/contracts.ts           Shared validation schemas and domain types
-src/lib/benchmark-queue.ts     Local and BullMQ benchmark execution
-src/lib/benchmark-store.ts     In-memory run state and persistence coordination
-src/lib/ollama-client.ts       Streaming Ollama client and telemetry extraction
-src/lib/frontier-evaluator.ts  OpenAI-compatible structured evaluation
-src/lib/database.ts            SQLite/PostgreSQL persistence and aggregation
-src/worker.ts                  Durable BullMQ worker entry point
-db/schema.sql                  PostgreSQL schema and migrations
-e2e/                           Playwright dashboard coverage
-integration/                   PostgreSQL and Redis connectivity tests
+src/
+├── app/                        Next.js App Router layout, page, CSS, and API routes
+│   ├── api/                    Typed REST API endpoints
+│   ├── globals.css             Global CSS variables and design tokens
+│   ├── layout.tsx              Root HTML layout wrapper
+│   └── page.tsx                Main application entry point
+├── components/                 React dashboard components
+│   ├── analytics/              Leaderboard tables, KPI cards, Radar charts, Scatter plots
+│   ├── history/                Run history matrix, drawer details, side-by-side comparison
+│   ├── layout/                 Topbar navigation and status indicators
+│   ├── settings/               Configuration and credentials panel
+│   └── wizard/                 Multi-step benchmark setup wizard
+├── lib/                        Core business logic and integrations
+│   ├── benchmark-queue.ts      Local queue and Redis BullMQ queue runner
+│   ├── benchmark-store.ts      In-memory run state manager & persistence layer
+│   ├── contracts.ts            Zod schemas, domain types, and validation rules
+│   ├── database.ts             SQLite and PostgreSQL database abstraction & aggregations
+│   ├── endpoints.ts            Endpoint safety validation (SSRF protection & HTTPS rules)
+│   ├── frontier-evaluator.ts   OpenAI-compatible LLM judge client
+│   ├── leaderboard.test.ts     Leaderboard calculation unit tests
+│   ├── ollama-client.ts        Streaming Ollama client & telemetry extractor
+│   ├── secrets.ts              AES-256-GCM secret encryption utilities
+│   ├── security-templates.ts   Standardized LLM security attack vector templates
+│   └── sqlite-db.ts            Better-SQLite3 initialization and migration engine
+└── worker.ts                   Durable Redis BullMQ background worker entry point
+db/                             PostgreSQL database schema definitions
+e2e/                            Playwright end-to-end test suites
+integration/                    PostgreSQL and Redis integration tests
 ```
 
-## Development commands
+## Development Commands
 
 ```bash
-npm run dev                 # Start the Next.js development server
-npm run build               # Create a production build
-npm start                   # Serve the production build
-npm run worker              # Start the durable BullMQ worker
-npm run db:migrate          # Apply db/schema.sql using DATABASE_URL
-npm run lint                # Run ESLint
-npm run typecheck           # Run TypeScript without emitting files
-npm test                    # Run unit and library tests
-npm run test:integration    # Check PostgreSQL and Redis when configured
-npm run test:e2e            # Build and run Playwright tests
-npm run test:e2e:dev        # Run Playwright against a development server
+# Development & Build
+npm run dev                 # Start Next.js development server
+npm run build               # Compile production build
+npm start                   # Run production server
+npm run worker              # Start durable BullMQ worker process
+
+# Database Operations
+npm run db:migrate          # Execute PostgreSQL schema migrations (requires DATABASE_URL)
+
+# Code Quality & Testing
+npm run lint                # Run ESLint validation
+npm run typecheck           # Run TypeScript static type checker
+npm test                    # Run Vitest unit & module test suite
+npm run test:integration    # Run PostgreSQL/Redis integration tests (if configured)
+npm run test:e2e            # Run Playwright E2E suite against production build
+npm run test:e2e:dev        # Run Playwright E2E suite against development server
 ```
-
-The integration suite is skipped when `DATABASE_URL` or `REDIS_URL` is not
-configured. Before running E2E tests locally, install Chromium once:
-
-```bash
-npx playwright install chromium
-```
-
-The standard E2E suite builds and starts the application on a test port. The
-development E2E suite verifies client hydration against a development server;
-its provider calls are mocked by the tests.
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
-conventions, and the contribution workflow. This project is released under the
-[MIT License](LICENSE) and follows the
-[Code of Conduct](CODE_OF_CONDUCT.md). To report a security issue, see
-[SECURITY.md](SECURITY.md). Release history is tracked in
-[CHANGELOG.md](CHANGELOG.md).
+Contributions are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on code style, testing requirements, and pull request workflows.
+
+- **Code of Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- **Security Issues:** Report vulnerabilities according to [SECURITY.md](SECURITY.md).
+- **Changelog:** Track updates in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
