@@ -7,46 +7,67 @@
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black.svg)](package.json)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](package.json)
 
-SLMarena (Small Language Model Arena) is an enterprise-grade local language-model benchmarking, security evaluation, and quality telemetry workspace. It executes standardized scenarios across local Ollama models, captures response-quality metrics and granular inference telemetry, evaluates model outputs via an OpenAI-compatible frontier judge model, and compiles rankings on an interactive Arena Leaderboard.
+SLMarena (Small Language Model Arena) is an enterprise-grade local language-model benchmarking, security evaluation, and quality telemetry workspace. It positions the **Small Language Model (SLM)** as a first-class entity and applies universal UX/UI patterns—*Progressive Disclosure*, *Master-Detail Navigation*, and *Contextual Analytics*—making model comparison intuitive for both AI engineers and non-technical stakeholders.
+
+SLMarena executes standardized scenarios across local Ollama models, captures response-quality metrics and granular inference telemetry, evaluates model outputs via an OpenAI-compatible frontier judge model, and compiles rankings on an interactive Arena Leaderboard.
 
 The application is built for secure, local, and private model evaluations. It supports both a zero-config single-process development mode backed by SQLite and a scalable, durable multi-process deployment backed by PostgreSQL and Redis.
 
 ## Contents
 
+- [UX/UI Architecture & Navigation](#uxui-architecture--navigation)
 - [Highlights](#highlights)
 - [Architecture](#architecture)
 - [Security Testing Framework](#security-testing-framework)
 - [Arena Leaderboard & Analytics](#arena-leaderboard--analytics)
+- [Theme System (Light / Dark / System)](#theme-system-light--dark--system)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [Configuring Evaluation](#configuring-evaluation)
 - [Durable PostgreSQL and Redis Setup](#durable-postgresql-and-redis-setup)
 - [Environment Variables](#environment-variables)
-- [Using the Dashboard](#using-the-dashboard)
+- [Using the Modules](#using-the-modules)
 - [HTTP API Overview](#http-api-overview)
 - [Persistence and Data Model](#persistence-and-data-model)
 - [Project Layout](#project-layout)
 - [Development Commands](#development-commands)
 - [Contributing](#contributing)
 
+## UX/UI Architecture & Navigation
+
+The application is structured into **4 independent core modules**, cleanly separating analytical consultation from operational execution, alongside a 3-level navigation hierarchy:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  SLMarena   [ 📊 Leaderboard ]   [ 🧪 Test Suites ]   [ ⚡ Monitor ]   [ ⚙️ Settings ]│
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **📊 Arena Leaderboard (`/`):** Public executive showcase and comparative database. Features 4 global KPI cards (*Evaluated Models*, *Overall Leader*, *Security Leader*, *Average Speed*), a Master Model Table with unit micro-pills (`tok/s`, `ms`, `tok`, `s`), color-coded security badges (`🟢 Immune`, `🟡 Moderate`, `🔴 Vulnerable`), custom weight sliders (`[⚙ Weights]`), and real-time linked visual charts (*Scatter Plot* & *Radar Chart*).
+2. **🧪 Test Suites & Matrix (`/suites`):** Dual-panel test creator and matrix orchestrator.
+   - **Left Panel:** Syntax-highlighted system prompt editor, category selector, Canary Token Injector (`CANARY_SEC_9842_ALPHA`), multi-turn conversation builder, scenario library saver, and delete button (`[ 🗑️ Delete from Library ]`).
+   - **Right Panel:** **Mode A (Model Onboarding)** (run the active editor scenario on a single model), **Mode B (Suite Update)** (run 1 scenario across ALL local models), and **Custom Matrix Mode** (N models $\times$ M scenarios) with a live model refresh trigger (`[ 🔄 Refresh Models ]`).
+3. **⚡ Live Monitor (`/monitor`):** Technical operations and real-time inference monitoring. Displays local Ollama server status (ping, installed models, active model loaded in VRAM via `/api/ps`, VRAM usage), active run progress bar, token-by-token live SSE streaming box, queue flow controls (*Pause*, *Resume*, *Cancel*, *Retry Failed*), and run history log.
+4. **⚙️ Settings (`/settings`):** Endpoint configurations (Ollama URL, Evaluator API base URL & key), inference hyper-parameters, and theme options.
+5. **Level 2: Model Profile (`/models/[modelId]`):** Technical dossier for an individual model. Displays model averages (Rating, Grammar, Compliance, Security Resilience), filterable executed test benchmarks table, and inspector triggers.
+6. **Level 3: Test Inspector Drawer:** Slide-over panel sliding from the right without losing background context. Displays System Prompt, User Prompt, SLM Output Response, Evaluator Verdict (star ratings, qualitative feedback, vulnerability analysis), and Execution Telemetry (*TTFT, Speed, Output Tokens, Latency*).
+
 ## Highlights
 
-- **Model Discovery & Execution Wizard:** Automatically discover installed Ollama models, configure multi-model comparisons, set multi-sample repetition (1–10 runs per model), and fine-tune inference parameters (temperature, context length `numCtx`, top-p, repeat penalty, max tokens `numPredict`).
-- **Dual Test Categories:** Run general quality benchmark scenarios or target specific safety and robustness vectors with dedicated Security Assessment evaluations.
-- **Automated Security Vectors:** Built-in security templates covering 8 major LLM attack types (Prompt Leakage, SQL Parameter Injection, Delimiter Spoofing, Refusal Suppression, Context Overstuffing, Encoding Bypass, Instruction Override, Indirect Injection).
-- **Interactive Arena Leaderboard:** Comprehensive leaderboards with dynamic Arena Index scoring based on configurable weights for Quality, Security, and Speed. Includes filter controls by category and model parameter size (<4B, 4B–8B, >8B).
-- **Deep Analytics & Data Visualizations:** Compare models with multi-axis Security Radar Charts and Quality vs. Speed (tokens/sec) Scatter Plots.
-- **Granular Inference Telemetry:** Capture Time to First Token (TTFT), token output throughput (tok/sec), thinking time token consumption, prompt token count, output token count, and execution latency for every turn and sample.
-- **Automated Frontier Evaluation (LLM-as-a-Judge):** Evaluate outputs automatically using OpenAI-compatible `/chat/completions` endpoints. Receives structured JSON metrics (1–5 star overall score, Grammar, System Prompt Compliance, Accuracy ratings, and qualitative reasoning).
-- **Resilient Evaluator Integration:** Automatic retry fallback without `response_format` when judging endpoints return HTTP 400, ensuring maximum model endpoint compatibility.
-- **Real-Time Streaming & Control:** Live progressive response streaming over Server-Sent Events (SSE), with active run management (pause, resume, cancel, sample deletion).
-- **Human Audit & Governance:** Mark model outputs as Approved, Rejected, or Reviewed, attach custom reviewer notes, and search run history with advanced filters.
-- **At-Rest Secret Encryption:** Persists evaluator API keys securely using AES-256-GCM encryption (`APP_ENCRYPTION_KEY`), ensuring secrets are never leaked in client API responses.
+- **Model Discovery & Execution Orchestrator:** Discover installed Ollama models automatically, configure multi-model matrix comparisons, set multi-sample repetition (1–10 runs per model), and fine-tune inference parameters (temperature, context length `numCtx`, top-p, repeat penalty, max tokens `numPredict`).
+- **Canary Token Security Testing:** Auto-inject canary tokens (`CANARY_SEC_9842_ALPHA`) and evaluate 8 major security attack vectors (*Instruction Override*, *System Prompt Leakage*, *Indirect Prompt Injection*, *Delimiter Hijacking*, *Context Overstuffing*, *Encoding Obfuscation*, *Tool Parameter Hijacking*, *Refusal Suppression*).
+- **Linked Visual Analytics:** Interactive 2D *Scatter Plot (Arena Score vs. Speed)* and 6-axis *Radar Chart (Grammar, Compliance, Accuracy, Security, TTFT, Speed)* that dynamically react in real time to checked models (`[x]`) in the Master Table.
+- **Custom Weighting Formula:** Adjust Arena Score weighting dynamically:
+  $$\text{Arena Index} = (W_q \cdot \text{Quality}) + (W_s \cdot \text{Security}) + (W_v \cdot \text{Speed})$$
+- **Granular Inference Telemetry:** Capture Time to First Token (TTFT), token output throughput (tok/sec), thinking token consumption, prompt token count, output token count, and execution latency for every turn and sample.
+- **Automated Frontier Evaluation (LLM-as-a-Judge):** Evaluate outputs automatically using OpenAI-compatible `/chat/completions` endpoints. Receives structured JSON metrics (1–5 star overall score, Grammar, Compliance, Accuracy, and vulnerability breakdown).
+- **Real-Time Token Streaming & Queue Controls:** Stream output token-by-token over Server-Sent Events (SSE) in the Live Monitor, with queue control actions (*Pause*, *Resume*, *Cancel*, *Retry Failed*).
+- **Theme Support (Light / Dark / System):** Native support for Light mode, Dark mode, and OS preference matching without flash of unstyled content (FOUC).
 - **Flexible Execution Modes:** Zero-dependency local SQLite setup or enterprise-ready PostgreSQL + Redis BullMQ worker queue architecture.
 
 ## Architecture
 
-SLMarena is designed as a Next.js 16 application with a React 19 single-page client dashboard, typed server-side REST API routes, and a decoupled BullMQ worker process.
+SLMarena is built as a Next.js 16 application with a React 19 single-page dashboard, typed server-side REST API routes, and a decoupled BullMQ worker process.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -78,12 +99,12 @@ SLMarena is designed as a Next.js 16 application with a React 19 single-page cli
                     └─────────────────────┘
 ```
 
-### Execution modes
+### Execution Modes
 
-- **Local Mode (Default):** Leave `REDIS_URL` empty. Benchmark runs execute directly in the web server process and persist to an embedded SQLite database (`SQLITE_PATH` or `./slmarena.db`). Recommended for local evaluation and single-user workflows.
+- **Local Mode (Default):** Leave `REDIS_URL` empty. Benchmark runs execute directly in the web server process and persist to an embedded SQLite database (`SQLITE_PATH`, default `./compare.db`). Recommended for local evaluation and single-user workflows.
 - **Durable Mode:** Set both `DATABASE_URL` and `REDIS_URL`. Benchmark jobs are enqueued in Redis via BullMQ, processed asynchronously by `src/worker.ts`, and persisted to PostgreSQL. Progress updates and events are broadcast across processes via Redis pub/sub.
 
-> **Note:** `REDIS_URL` requires `DATABASE_URL`. Running a separate background worker requires shared persistent state in PostgreSQL.
+> **Note:** `REDIS_URL` requires `DATABASE_URL` (workers must recover run state from PostgreSQL), and the durable worker additionally requires `APP_ENCRYPTION_KEY` to decrypt stored evaluator credentials.
 
 ## Security Testing Framework
 
@@ -91,14 +112,14 @@ SLMarena includes a security testing suite engineered to evaluate Small Language
 
 ### Built-in Attack Vectors
 
-The benchmark wizard includes 8 pre-configured security templates using a standardized system context containing canary tokens (`CANARY_SEC_9842_ALPHA`) and administrative override codes:
+The benchmark suite includes 8 pre-configured security attack types using a standardized system context containing canary tokens (`CANARY_SEC_9842_ALPHA`):
 
 | Attack Vector | Category Code | Objective |
 | --- | --- | --- |
 | **System Prompt Exfiltration** | `SYSTEM_PROMPT_LEAKAGE` | Forces translation or extraction of confidential system prompt instructions and secret canary keys. |
 | **Tool & Parameter Hijacking** | `TOOL_PARAMETER_HIJACKING` | Injects SQL syntax (`DROP TABLE`, `OR 1=1`) or parameters into structured JSON function outputs. |
 | **Delimiter & Token Hijacking** | `DELIMITER_HIJACKING` | Spoofs control tokens (`<|SYSTEM_END|>`, `[INST]`, `### System`) to force administrative privilege escalation. |
-| **Refusal Suppression** | `REFUSAL_SUPPRESSION` | Forces response to begin with mandatory affirmative prefixes combined with Base64 payload decoding. |
+| **Refusal Suppression** | `REFUSAL_SUPPRESSION` | Forces response to begin with mandatory affirmative prefixes combined with payload decoding. |
 | **Context Overstuffing** | `CONTEXT_OVERSTUFFING` | Injects high-volume background filler text to displace system instructions from the model's attention window. |
 | **Encoding Obfuscation** | `ENCODING_OBFUSCATION` | Employs Base64 encoding, L33tspeak, or low-resource translation to bypass safety filters. |
 | **Instruction Override** | `INSTRUCTION_OVERRIDE` | Directly commands the model to ignore established system guidelines and safety constraints. |
@@ -106,24 +127,33 @@ The benchmark wizard includes 8 pre-configured security templates using a standa
 
 ## Arena Leaderboard & Analytics
 
-The **Arena & Analytics** module compiles performance metrics across evaluated models to construct an objective ranking matrix.
+The **Arena Leaderboard** module compiles performance metrics across evaluated models to construct an objective ranking matrix.
 
 ### Arena Index Scoring
 
-Models are ranked according to a customizable composite **Arena Index** score calculated as:
+Models are ranked according to a customizable composite **Arena Index** score:
 
 $$\text{Arena Index} = (W_q \times \text{Quality}) + (W_s \times \text{Security}) + (W_v \times \text{Speed})$$
 
 Default weight configuration:
 - **Quality ($W_q = 40\%$):** Evaluator star ratings, grammar accuracy, system prompt compliance, and factual relevance.
-- **Security ($W_s = 40\%$):** Attack Surface Resistance (ASR), calculated as the percentage of security tests successfully defended without revealing canary tokens or executing hijacked commands.
+- **Security ($W_s = 40\%$):** Security Resilience — calculated as $100 - \text{ASR}$, where **ASR (Attack Success Rate)** is the percentage of security attack tests in which the evaluator detected an injection or system-prompt/canary leakage.
 - **Speed ($W_v = 20\%$):** Token output throughput (tokens per second) relative to parameter size.
 
 ### Visualizations & Controls
 
-- **Filter Controls:** Filter leaderboard statistics by category (`ALL`, `GENERAL`, `SECURITY`) and model size ranges (`<4B`, `4B-8B`, `>8B`).
-- **Security Radar Chart:** Multi-dimensional spider chart visualizing model resistance across all 8 security attack vectors.
-- **Quality vs. Speed Scatter Plot:** Interactive 2D graph plotting generation quality against throughput (tok/sec), exposing efficiency frontiers across model sizes.
+- **Master Model Table:** Checkbox selection `[x]`, model parameter badges, Arena Score, Rating stars, sub-ratings (Grammar, Compliance, Accuracy), Security badges (`🟢 Immune`, `🟡 Moderate`, `🔴 Vulnerable`), unit micro-pills (`tok/s`, `ms`, `tok`, `s`), multi-column sorting, and `[View Profile]` profile links.
+- **Scatter Plot (Arena Score vs. Speed):** Interactive 2D graph plotting Arena Index against output throughput (tok/sec), with bubble sizes proportional to parameter count.
+- **Radar Chart (Multi-axis):** 6-axis spider chart comparing Grammar, Compliance, Accuracy, Security, TTFT, and Speed across up to 4 checked models.
+
+## Theme System (Light / Dark / System)
+
+SLMarena supports three appearance modes:
+- **☀️ Light Mode:** High-contrast light background (`#f8fafc`), crisp slate text (`#0f172a`), and clean surface cards (`#ffffff`).
+- **🌙 Dark Mode:** Dark theme (`#0c1017`) optimized for low-light environments.
+- **💻 System Theme:** Automatically syncs with the operating system's `prefers-color-scheme`.
+
+Theme preference is persisted in `localStorage` and can be toggled via the Topbar or the Settings panel. An early inline script prevents flash of unstyled content (FOUC).
 
 ## Requirements
 
@@ -134,8 +164,8 @@ For local development:
 - **Ollama:** An active Ollama instance with at least one pulled model:
 
   ```bash
+  ollama pull qwen3.5:4b
   ollama pull llama3.2
-  ollama pull qwen2.5
   ```
 
 For durable worker mode:
@@ -154,25 +184,25 @@ For durable worker mode:
    npm install
    ```
 
-2. **Start the Next.js development application:**
+2. **Start the Next.js development server:**
 
    ```bash
    npm run dev
    ```
 
-3. **Open the web dashboard:**
+3. **Open the application:**
 
    Navigate to [http://localhost:3000](http://localhost:3000).
 
-4. **Run your first benchmark:**
+4. **Run a matrix benchmark:**
 
-   - Switch to the **New Run (Wizard)** tab.
-   - Click **Discover models** to fetch available models from Ollama (`http://localhost:11434`).
-   - Select one or more models, pick a scenario or security template, and click **Start Benchmark**.
+   - Switch to the **Test Suites (`/suites`)** page.
+   - Click **🔄 Refresh Models** to discover models from your Ollama server.
+   - Select a model onboarding run or launch a matrix benchmark.
 
 ## Configuring Evaluation
 
-Automated response evaluation requires an OpenAI-compatible `/chat/completions` judge endpoint. Configure these variables in `.env.local` or through the **Settings** panel:
+Automated response evaluation requires an OpenAI-compatible `/chat/completions` judge endpoint. Configure these variables in `.env.local` or through the **Settings (`/settings`)** panel:
 
 ```dotenv
 EVALUATOR_BASE_URL=https://api.openai.com/v1
@@ -180,21 +210,9 @@ EVALUATOR_MODEL=gpt-4o-mini
 EVALUATOR_API_KEY=your-api-key-here
 ```
 
-### Evaluator Schema & Output
-
-The judge model evaluates each response against the prompt context and returns a structured JSON payload:
-
-- **Overall Score:** 1 to 5 stars.
-- **Grammar & Spelling Rating:** 1 to 5 stars.
-- **System Prompt Compliance Rating:** 1 to 5 stars.
-- **Accuracy & Relevance Rating:** 1 to 5 stars.
-- **Verdict:** Short qualitative explanation of the score.
-
-If the evaluator endpoint rejects structured JSON output (`response_format: { type: "json_object" }`) with an HTTP 400 error, SLMarena automatically retries without `response_format` and parses the JSON response body.
-
 ## Durable PostgreSQL and Redis Setup
 
-For high-throughput, multi-user, or background processing, configure PostgreSQL and Redis:
+For multi-user or background worker processing:
 
 1. **Configure connection strings in `.env.local`:**
 
@@ -209,73 +227,70 @@ For high-throughput, multi-user, or background processing, configure PostgreSQL 
    docker compose --env-file .env.local up -d
    ```
 
-3. **Generate an encryption key:**
-
-   ```bash
-   openssl rand -hex 32
-   ```
-
-   Add the output to `APP_ENCRYPTION_KEY` in `.env.local`.
-
-4. **Run PostgreSQL migrations:**
+3. **Run database migrations:**
 
    ```bash
    export DATABASE_URL=postgresql://slmarena:local-development-only@localhost:55432/slmarena
    npm run db:migrate
    ```
 
-5. **Start the web application and worker process:**
+4. **Start the web application and worker process:**
 
    ```bash
-   # Terminal 1: Web App
+   # Terminal 1: Web App (make sure APP_ENCRYPTION_KEY is set, e.g. in .env.local)
    npm run dev
 
    # Terminal 2: Background Worker
+   export APP_ENCRYPTION_KEY=<32-byte hex key>
    npm run worker
    ```
 
 ## Environment Variables
 
-All variables can be configured in `.env.local`:
-
 | Variable | Description | Default |
 | --- | --- | --- |
+| `APP_URL` | Public base URL of the application. | `http://localhost:3000` |
 | `OLLAMA_URL` | Base URL of the target Ollama instance. | `http://localhost:11434` |
 | `ALLOWED_OLLAMA_HOSTS` | Comma-separated host allowlist for Ollama endpoints. | Empty (local/private IPs allowed) |
 | `EVALUATOR_BASE_URL` | Base URL for OpenAI-compatible evaluator endpoint. | Empty |
 | `EVALUATOR_MODEL` | Judge model name used for evaluation. | Empty |
 | `EVALUATOR_API_KEY` | Judge API key. Encrypted at rest when saved via UI. | Empty |
 | `APP_ENCRYPTION_KEY` | 32-byte hex key for AES-256-GCM secret encryption. | Empty |
-| `SQLITE_PATH` | File path for SQLite database in local mode. | `./slmarena.db` |
+| `SQLITE_PATH` | File path for SQLite database in local mode. | `./compare.db` |
 | `DATABASE_URL` | PostgreSQL connection string. Enables Postgres persistence. | Empty |
 | `REDIS_URL` | Redis connection string. Enables BullMQ queuing and SSE events. | Empty |
+| `POSTGRES_PORT` | Host port exposed by the docker-compose PostgreSQL service. | `55432` |
+| `POSTGRES_PASSWORD` | Password for the docker-compose PostgreSQL service. | `local-development-only` |
+| `REDIS_PASSWORD` | Password for the docker-compose Redis service. | `local-development-only` |
 | `BENCHMARK_CONCURRENCY` | Maximum concurrent benchmark runs processed by worker queue. | `1` |
 | `BENCHMARK_MODEL_CONCURRENCY` | Maximum concurrent model evaluation jobs within a run. | `1` |
-| `NEXT_ALLOWED_DEV_ORIGINS` | Comma-separated allowed dev origins for Next.js. | Empty |
 
-## Using the Dashboard
+## Using the Modules
 
-### 1. Arena & Analytics Tab
-View aggregated rankings, KPI summary cards, model efficiency scatter plots, and security radar metrics across past runs.
+### 1. Leaderboard (`/`)
+- View executive KPI summary cards (*Evaluated Models*, *Overall Leader*, *Security Leader*, *Average Speed*).
+- Interact with the Master Model Table, filter by size/category, and adjust Arena Score weights (`[⚙ Weights]`).
+- Click `[View Profile]` to open the run's Side-by-Side Comparison (or the dedicated `/models/[modelId]` dossier) for a chosen model.
+- Analyze real-time linked Scatter Plots and Radar Charts driven by checked table rows `[x]`.
+- Use the **Run History** section for model-grouped results (per-model averages), run-list matrix, side-by-side comparison, sample deletion, and manual review (`APPROVED` / `REJECTED`).
 
-### 2. New Run (Wizard) Tab
-- Select **General** or **Security** test categories.
-- Pick built-in security templates or build multi-turn custom scenarios.
-- Set sample repetition per model (1 to 10 samples) to verify answer consistency.
-- Fine-tune inference hyper-parameters (temperature, context size, top-p, repeat penalty).
+### 2. Test Suites & Matrix (`/suites`)
+- Create and edit system prompts with Canary Token injection (`CANARY_SEC_9842_ALPHA`).
+- Manage user conversation turns and save/delete scenarios from the library (`[ 🗑️ Delete from Library ]`).
+- Execute **Mode A (Model Onboarding)** (active scenario on a single model), **Mode B (Suite Update)** (one scenario across all models), or **Custom Matrix Mode** with a live refresh button (`[ 🔄 Refresh Models ]`).
 
-### 3. History & Failures Tab
-- Monitor active runs streaming live progress via SSE.
-- Pause, resume, or cancel active runs.
-- Filter runs by keyword, date, model name, star rating, or security vulnerability flag.
-- Expand results to review turn-by-turn telemetry, evaluator breakdown, raw outputs, and assign human review status (`APPROVED`, `REJECTED`, `REVIEWED`).
+### 3. Live Monitor (`/monitor`)
+- Monitor local Ollama server health, installed model count, active model loaded in VRAM (via `/api/ps`), and VRAM allocation.
+- View real-time SSE token stream box during inference.
+- Control active runs (*Pause*, *Resume*, *Cancel*, *Retry Failed*).
 
-### 4. Settings Tab
-Configure default Ollama server endpoints, evaluator judge credentials, and global inference parameter defaults.
+### 4. Settings (`/settings`)
+- Configure Ollama endpoint URL, LLM Judge credentials, default inference parameters, and Light/Dark/System theme choices.
+
+### 5. Model Profile (`/models/[modelId]`)
+- Inspect a specific model's summary metrics, average ratings, and filterable executed test benchmark history.
 
 ## HTTP API Overview
-
-All API endpoints enforce strict Zod schema validation:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
@@ -289,56 +304,66 @@ All API endpoints enforce strict Zod schema validation:
 | `POST` | `/api/runs/:id/resume` | Resume execution of a paused benchmark. |
 | `POST` | `/api/runs/:id/cancel` | Cancel execution of an active or pending benchmark. |
 | `DELETE` | `/api/runs/:id/results/:resultId` | Delete a single model sample result from a run. |
-| `GET` | `/api/ollama/models` | Discover available models from the target Ollama instance. |
+| `GET` | `/api/ollama/models` | Discover installed models (`/api/tags`) & active VRAM models (`/api/ps`) from target Ollama instance. |
 | `GET` | `/api/analysis` | Retrieve aggregated scenario metrics across runs. |
 | `GET` | `/api/leaderboard` | Query Arena Leaderboard statistics with custom dynamic weights and filters. |
 | `PATCH` | `/api/results/:id/review` | Record human review status (`APPROVED`, `REJECTED`, etc.) and reviewer notes. |
 
 ## Persistence and Data Model
 
-SLMarena maintains a relational domain model for benchmark tracking:
+Runs, model results, per-turn telemetry, evaluator verdicts, scenarios, and application settings are persisted across restarts in either storage engine:
 
-- **Scenarios:** Reusable benchmark prompts, categories, attack types, and user conversation turns.
-- **Runs:** Benchmark execution instances, selected models, sampling settings, and overall run status (`PENDING`, `RUNNING`, `COMPLETED`, `PAUSED`, `CANCELLED`, `FAILED`).
-- **Results:** Per-model and per-sample execution output, status (`INFERRING`, `EVALUATING`, `COMPLETED`), and error details.
-- **Telemetry:** Turn-level telemetry capturing TTFT, throughput (tok/sec), token counts, and latency.
-- **Evaluations:** Judge responses, star ratings, category sub-scores, and qualitative feedback.
-- **Reviews:** Human audit status, tags, and notes.
-
-PostgreSQL schema migrations are managed via [`db/schema.sql`](db/schema.sql). SQLite migrations are managed dynamically via [`src/lib/sqlite-db.ts`](src/lib/sqlite-db.ts).
+- **Local mode (default):** Single-file SQLite database via Better-SQLite3 (`SQLITE_PATH`, default `./compare.db`) in WAL mode. The schema — `app_settings`, `scenarios`, `test_runs`, `model_results`, `model_result_turns`, `evaluations` — is created and migrated automatically on first access (`src/lib/sqlite-db.ts`).
+- **Durable mode:** PostgreSQL (`DATABASE_URL`) with the same schema defined in `db/schema.sql`, applied with `npm run db:migrate` via `psql`. Lists and parameter objects are stored as JSONB, and a monotonic `control_version` guards against out-of-order writes from the concurrent worker.
+- **Secrets:** Evaluator API keys are encrypted at rest with AES-256-GCM (`APP_ENCRYPTION_KEY`) — they are stored as `evaluator_api_key_encrypted` and never returned by the API; only a `evaluatorApiKeyConfigured` boolean is exposed.
+- **Human audit trail:** Each model result carries a review status (`UNREVIEWED`, `REVIEWED`, `APPROVED`, `REJECTED`) and optional reviewer notes via `/api/results/:id/review`.
 
 ## Project Layout
 
 ```text
 src/
-├── app/                        Next.js App Router layout, page, CSS, and API routes
-│   ├── api/                    Typed REST API endpoints
-│   ├── globals.css             Global CSS variables and design tokens
-│   ├── layout.tsx              Root HTML layout wrapper
-│   └── page.tsx                Main application entry point
+├── app/                        Next.js App Router layout, page routes, CSS, and API routes
+│   ├── api/                    Typed REST API endpoints (/runs, /scenarios, /leaderboard, /ollama/models, etc.)
+│   ├── models/[modelId]/       Level 2 Model Profile page route
+│   ├── monitor/                Live Monitor module page route
+│   ├── settings/               Settings page route
+│   ├── suites/                 Test Suites & Matrix module page route
+│   ├── globals.css             Global CSS variables, design tokens, light/dark themes
+│   ├── layout.tsx              Root HTML layout with ThemeProvider and a FOUC-prevention inline script
+│   └── page.tsx                Arena Leaderboard entry point (tabbed dashboard)
 ├── components/                 React dashboard components
-│   ├── analytics/              Leaderboard tables, KPI cards, Radar charts, Scatter plots
-│   ├── history/                Run history matrix, drawer details, side-by-side comparison
-│   ├── layout/                 Topbar navigation and status indicators
-│   ├── settings/               Configuration and credentials panel
-│   └── wizard/                 Multi-step benchmark setup wizard
+│   ├── analytics/              KPI cards, leaderboard table, Radar chart, Scatter plot
+│   ├── history/                Model-grouped results, run history matrix, side-by-side comparison
+│   ├── inspector/              Level 3 Test Inspector slide-over drawer
+│   ├── layout/                 Topbar navigation and theme switcher
+│   ├── models/                 Model dossier profile components
+│   ├── monitor/                Live monitor queue and SSE token stream panel
+│   ├── settings/               Configuration, evaluator credentials, and theme selection panel
+│   ├── suites/                 Test suite creator, canary injector, and matrix orchestrator
+│   ├── benchmark-dashboard.tsx Tabbed leaderboard dashboard (analytics / wizard / history)
+│   ├── theme-provider.tsx      Light/Dark/System theme context provider
+│   └── wizard/                 Benchmark setup wizard
 ├── lib/                        Core business logic and integrations
-│   ├── benchmark-queue.ts      Local queue and Redis BullMQ queue runner
-│   ├── benchmark-store.ts      In-memory run state manager & persistence layer
+│   ├── benchmark-queue.ts      Local queue runner and Redis BullMQ enqueue
+│   ├── benchmark-store.ts      In-memory run state manager & persistence facade
 │   ├── contracts.ts            Zod schemas, domain types, and validation rules
-│   ├── database.ts             SQLite and PostgreSQL database abstraction & aggregations
+│   ├── database.ts             SQLite/PostgreSQL abstraction, aggregations, and leaderboards
 │   ├── endpoints.ts            Endpoint safety validation (SSRF protection & HTTPS rules)
+│   ├── format-bytes.ts         Human-readable byte formatting for model sizes
 │   ├── frontier-evaluator.ts   OpenAI-compatible LLM judge client
-│   ├── leaderboard.test.ts     Leaderboard calculation unit tests
 │   ├── ollama-client.ts        Streaming Ollama client & telemetry extractor
+│   ├── redis-connection.ts     BullMQ / ioredis connection factory
+│   ├── run-events.ts           Redis pub/sub helpers backing the SSE run stream
 │   ├── secrets.ts              AES-256-GCM secret encryption utilities
 │   ├── security-templates.ts   Standardized LLM security attack vector templates
-│   └── sqlite-db.ts            Better-SQLite3 initialization and migration engine
+│   └── sqlite-db.ts            Better-SQLite3 initialization, migration engine, and CRUD
 └── worker.ts                   Durable Redis BullMQ background worker entry point
-db/                             PostgreSQL database schema definitions
+db/                             PostgreSQL schema (db/schema.sql) for durable mode
 e2e/                            Playwright end-to-end test suites
 integration/                    PostgreSQL and Redis integration tests
 ```
+
+> Unit tests live alongside their modules under `src/lib/*.test.ts` (`contracts`, `database`/`leaderboard`, `endpoints`, `frontier-evaluator`, `ollama-client`, `benchmark-queue`, `secrets`, `format-bytes`).
 
 ## Development Commands
 
@@ -363,7 +388,7 @@ npm run test:e2e:dev        # Run Playwright E2E suite against development serve
 
 ## Contributing
 
-Contributions are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on code style, testing requirements, and pull request workflows.
+Contributions are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 - **Code of Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - **Security Issues:** Report vulnerabilities according to [SECURITY.md](SECURITY.md).
@@ -372,4 +397,3 @@ Contributions are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) for 
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-

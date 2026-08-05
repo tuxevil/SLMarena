@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { LeaderboardModelRow } from "@/lib/contracts";
 
 interface SecurityRadarChartProps {
@@ -7,37 +8,56 @@ interface SecurityRadarChartProps {
 }
 
 export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
-  if (models.length === 0) {
+  const [hoveredModel, setHoveredModel] = useState<string | null>(null);
+  const displayModels = models.slice(0, 4);
+
+  if (displayModels.length === 0) {
     return (
       <div className="chart-empty-state">
         <p>No models selected for Radar comparison.</p>
-        <p className="sub">Select checkboxes in the Leaderboard table to chart.</p>
+        <p className="sub">Check boxes [x] in the Master Table to compare.</p>
       </div>
     );
   }
 
-  const width = 360;
-  const height = 280;
+  const width = 380;
+  const height = 300;
   const cx = width / 2;
   const cy = height / 2 - 10;
-  const radius = 90;
+  const radius = 95;
 
+  // Max speed across displayed models for normalization
+  const maxSpeed = Math.max(...models.map((m) => m.avgTokPerSec ?? 40), 50);
+
+  // 6 Axes: Grammar, Compliance, Accuracy, Security, TTFT, Speed
   const axes = [
-    { label: "Instruction Override", key: "instructionOverrideResistance" as const, angle: -Math.PI / 2 },
-    { label: "System Prompt Leakage", key: "systemPromptLeakageResistance" as const, angle: 0 },
-    { label: "Indirect Injection", key: "indirectInjectionDefense" as const, angle: Math.PI / 2 },
-    { label: "System Adherence", key: "systemPromptAdherence" as const, angle: Math.PI },
+    { label: "Grammar", angle: -Math.PI / 2, getVal: (m: LeaderboardModelRow) => ((m.avgGrammar ?? m.avgQualityStars ?? 4) / 5) * 100 },
+    { label: "Compliance", angle: -Math.PI / 6, getVal: (m: LeaderboardModelRow) => ((m.avgCompliance ?? m.avgQualityStars ?? 4) / 5) * 100 },
+    { label: "Accuracy", angle: Math.PI / 6, getVal: (m: LeaderboardModelRow) => ((m.avgAccuracy ?? m.avgQualityStars ?? 4) / 5) * 100 },
+    { label: "Security", angle: Math.PI / 2, getVal: (m: LeaderboardModelRow) => m.securityResilienceScore ?? 100 },
+    { label: "TTFT (Fast)", angle: (5 * Math.PI) / 6, getVal: (m: LeaderboardModelRow) => Math.max(10, Math.min(100, 100 - (m.avgTtftMs ?? 200) / 4)) },
+    { label: "Speed (tok/s)", angle: (-5 * Math.PI) / 6, getVal: (m: LeaderboardModelRow) => Math.min(100, ((m.avgTokPerSec ?? 0) / maxSpeed) * 100) },
   ];
 
-  const colors = ["#c8f26b", "#6366f1", "#f5ba64", "#ff7b7b", "#8b5cf6", "#06b6d4"];
+  const colors = ["#c8f26b", "#6366f1", "#f5ba64", "#ff7b7b"];
 
   const getPoint = (val: number, angle: number) => {
-    const r = (val / 100) * radius;
+    const r = (Math.max(0, Math.min(100, val)) / 100) * radius;
     return {
       x: cx + r * Math.cos(angle),
       y: cy + r * Math.sin(angle),
     };
   };
+
+  const isHovered = (modelName: string) => hoveredModel === modelName;
+
+  const orderedModels =
+    hoveredModel && displayModels.some((m) => m.modelName === hoveredModel)
+      ? [
+          ...displayModels.filter((m) => m.modelName !== hoveredModel),
+          displayModels.find((m) => m.modelName === hoveredModel)!,
+        ]
+      : displayModels;
 
   return (
     <div className="radar-chart-container">
@@ -65,7 +85,7 @@ export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
         {/* Axis lines and labels */}
         {axes.map((a) => {
           const pt = getPoint(100, a.angle);
-          const labelPt = getPoint(118, a.angle);
+          const labelPt = getPoint(120, a.angle);
           return (
             <g key={a.label}>
               <line x1={cx} y1={cy} x2={pt.x} y2={pt.y} stroke="var(--line)" strokeWidth="1" />
@@ -76,7 +96,7 @@ export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
                 fontSize="9"
                 fontWeight="500"
                 textAnchor={
-                  Math.abs(labelPt.x - cx) < 10
+                  Math.abs(labelPt.x - cx) < 15
                     ? "middle"
                     : labelPt.x > cx
                     ? "start"
@@ -89,12 +109,13 @@ export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
           );
         })}
 
-        {/* Polygons for each model */}
-        {models.map((m, idx) => {
-          const color = colors[idx % colors.length];
+        {/* Polygons for each selected model (up to 4) */}
+        {orderedModels.map((m) => {
+          const color = colors[displayModels.indexOf(m) % colors.length];
+          const hovered = isHovered(m.modelName);
           const points = axes
             .map((a) => {
-              const val = m.radar[a.key] ?? 100;
+              const val = a.getVal(m);
               const pt = getPoint(val, a.angle);
               return `${pt.x},${pt.y}`;
             })
@@ -105,14 +126,14 @@ export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
               <polygon
                 points={points}
                 fill={color}
-                fillOpacity="0.25"
+                fillOpacity={hovered ? "0.45" : "0.25"}
                 stroke={color}
-                strokeWidth="2"
+                strokeWidth={hovered ? "3" : "2"}
               />
               {axes.map((a) => {
-                const val = m.radar[a.key] ?? 100;
+                const val = a.getVal(m);
                 const pt = getPoint(val, a.angle);
-                return <circle key={a.key} cx={pt.x} cy={pt.y} r="3" fill={color} />;
+                return <circle key={a.label} cx={pt.x} cy={pt.y} r={hovered ? 4 : 3} fill={color} />;
               })}
             </g>
           );
@@ -121,10 +142,16 @@ export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
 
       {/* Legend */}
       <div className="radar-legend">
-        {models.map((m, idx) => {
+        {displayModels.map((m, idx) => {
           const color = colors[idx % colors.length];
+          const hovered = isHovered(m.modelName);
           return (
-            <div key={m.modelName} className="legend-item">
+            <div
+              key={m.modelName}
+              className={`legend-item${hovered ? " legend-item-hovered" : ""}`}
+              onMouseEnter={() => setHoveredModel(m.modelName)}
+              onMouseLeave={() => setHoveredModel(null)}
+            >
               <span className="legend-dot" style={{ backgroundColor: color }} />
               <span>{m.modelName}</span>
             </div>

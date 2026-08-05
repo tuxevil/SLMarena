@@ -396,10 +396,10 @@ export function BenchmarkDashboard() {
         {/* TAB 1: ARENA & ANALYTICS */}
         {activeTab === "analytics" && (
           <div className="tab-content analytics-tab">
-            {/* Top Winner & Failures KPI Hero Section */}
+            {/* 1. KPI CARDS */}
             <TopModelKpi models={leaderboardModels} totalRuns={leaderboardData?.kpis.totalBenchmarkRuns ?? 0} />
 
-            {/* SLM Leaderboard Table with Sliders */}
+            {/* 2. TOOLBAR & TABLA MAESTRA DE MODELOS */}
             <ArenaLeaderboard
               models={leaderboardModels}
               category={leaderboardCategory}
@@ -414,7 +414,7 @@ export function BenchmarkDashboard() {
                   prev.includes(modelName) ? prev.filter((m) => m !== modelName) : [...prev, modelName]
                 )
               }
-              onCompareModel={(modelName) => {
+              onSelectModelProfile={(modelName) => {
                 const matchedRun = history.find((r) => r.models.includes(modelName));
                 if (matchedRun) {
                   setSelectedRunForComparison(matchedRun);
@@ -424,22 +424,22 @@ export function BenchmarkDashboard() {
               }}
             />
 
-            {/* Visual Analytics Charts Grid */}
+            {/* 3. VISUAL ANALYTICS - Linked Selection (Scatter Plot & Radar Chart) */}
             <div className="charts-grid-row">
               <div className="chart-card">
                 <div className="chart-title-bar">
-                  <h4>📈 Trade-off: Quality vs. Speed</h4>
-                  <p>X-Axis: Speed (tok/s) | Y-Axis: Quality (1-5★)</p>
+                  <h4>📈 Scatter Plot: Arena Score vs. Speed (tok/s)</h4>
+                  <p>Selected models from table [x] (X-Axis: tok/s, Y-Axis: Arena Score)</p>
                 </div>
-                <QualitySpeedScatterPlot models={leaderboardModels} />
+                <QualitySpeedScatterPlot models={radarModels.length > 0 ? radarModels : leaderboardModels} />
               </div>
 
               <div className="chart-card">
                 <div className="chart-title-bar">
-                  <h4>🎯 Attack Resistance Profile (Radar)</h4>
-                  <p>Compare security dimensions across selected models</p>
+                  <h4>🎯 Radar Chart: Multi-axis Performance</h4>
+                  <p>Compares up to 4 selected models [x] (Grammar, Compliance, Accuracy, Security, TTFT, tok/s)</p>
                 </div>
-                <SecurityRadarChart models={radarModels} />
+                <SecurityRadarChart models={radarModels.length > 0 ? radarModels : leaderboardModels} />
               </div>
             </div>
           </div>

@@ -11,6 +11,11 @@ export const securityAttackTypeSchema = z.enum([
   "INSTRUCTION_OVERRIDE",
   "SYSTEM_PROMPT_LEAKAGE",
   "INDIRECT_PROMPT_INJECTION",
+  "DELIMITER_HIJACKING",
+  "CONTEXT_OVERSTUFFING",
+  "ENCODING_OBFUSCATION",
+  "TOOL_PARAMETER_HIJACKING",
+  "REFUSAL_SUPPRESSION",
 ]);
 
 export type TestCategory = z.infer<typeof testCategorySchema>;
@@ -221,6 +226,11 @@ export type LeaderboardModelRow = {
   avgTokPerSec: number | null;
   avgTtftMs: number | null;
   avgQualityStars: number | null;
+  avgGrammar: number | null;
+  avgCompliance: number | null;
+  avgAccuracy: number | null;
+  avgOutputTokens: number | null;
+  avgDurationMs: number | null;
   attackSuccessRatePct: number | null;
   securityResilienceScore: number | null;
   radar: SecurityRadarMetrics;

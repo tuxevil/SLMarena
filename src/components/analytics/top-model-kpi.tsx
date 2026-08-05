@@ -7,107 +7,107 @@ interface TopModelKpiProps {
   totalRuns: number;
 }
 
-export function TopModelKpi({ models, totalRuns }: TopModelKpiProps) {
-  const topModel = models.length > 0 ? models[0] : null;
+export function TopModelKpi({ models }: TopModelKpiProps) {
+  const topLeader = models.length > 0 ? models[0] : null;
 
-  // Identify models that failed or are vulnerable (ASR > 0% or avgQualityStars < 3)
-  const vulnerableOrFailingModels = models.filter(
-    (m) => (m.attackSuccessRatePct != null && m.attackSuccessRatePct > 0) || (m.avgQualityStars != null && m.avgQualityStars < 3)
-  );
+  // Find security leader (highest securityResilienceScore or lowest ASR)
+  const securityLeader =
+    models.length > 0
+      ? [...models].sort(
+          (a, b) =>
+            (b.securityResilienceScore ?? 0) - (a.securityResilienceScore ?? 0) ||
+            (a.attackSuccessRatePct ?? 0) - (b.attackSuccessRatePct ?? 0)
+        )[0]
+      : null;
+
+  // Calculate global average speed across models with speed data
+  const speeds = models.map((m) => m.avgTokPerSec).filter((s): s is number => s !== null && s > 0);
+  const avgSystemSpeed =
+    speeds.length > 0 ? (speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1) : "N/A";
 
   return (
     <div className="kpi-hero-grid">
-      {/* 🏆 Top Model Winner KPI Card */}
+      {/* 1. Evaluated Models */}
+      <div className="kpi-card">
+        <div className="kpi-header">
+          <div className="kpi-title-row">
+            <span className="kpi-icon">🤖</span>
+            <span className="kpi-title">Evaluated Models</span>
+          </div>
+          <span className="kpi-badge neutral">Database</span>
+        </div>
+        <div className="kpi-single-value-body">
+          <span className="kpi-big-number">{models.length}</span>
+          <span className="kpi-subtext">SLMs registered in system</span>
+        </div>
+      </div>
+
+      {/* 2. Top Leader */}
       <div className="kpi-card top-winner-card">
         <div className="kpi-header">
           <div className="kpi-title-row">
             <span className="kpi-icon">🏆</span>
-            <span className="kpi-title">Top Winning SLM Model</span>
+            <span className="kpi-title">Overall Leader</span>
           </div>
-          <span className="kpi-badge gold">🥇 Rank #1</span>
+          <span className="kpi-badge gold">#1 Arena Index</span>
         </div>
-
-        {topModel ? (
-          <div className="top-winner-body">
-            <div className="winner-main-info">
-              <span className="winner-name">{topModel.modelName}</span>
-              <span className="winner-size-tag">{topModel.paramSizeLabel}</span>
-            </div>
-
-            <div className="winner-metrics-strip">
-              <div className="metric-cell">
-                <span className="metric-label">Arena Index</span>
-                <span className="metric-value highlight">{topModel.arenaIndex} / 100</span>
+        <div className="kpi-single-value-body">
+          {topLeader ? (
+            <>
+              <div className="kpi-leader-name-row">
+                <span className="winner-name">{topLeader.modelName}</span>
+                <span className="winner-size-tag">{topLeader.paramSizeLabel}</span>
               </div>
-              <div className="metric-cell">
-                <span className="metric-label">LLM Judge Quality</span>
-                <span className="metric-value star">
-                  {topModel.avgQualityStars != null ? `${topModel.avgQualityStars} ★` : "N/A"}
-                </span>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-label">Speed</span>
-                <span className="metric-value speed">
-                  {topModel.avgTokPerSec != null ? `${topModel.avgTokPerSec} tok/s` : "N/A"}
-                </span>
-              </div>
-              <div className="metric-cell">
-                <span className="metric-label">ASR Vulnerability</span>
-                <span className={`metric-value ${topModel.attackSuccessRatePct && topModel.attackSuccessRatePct > 0 ? "danger" : "safe"}`}>
-                  {topModel.attackSuccessRatePct != null ? `${topModel.attackSuccessRatePct}%` : "0% (Safe)"}
-                </span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="kpi-empty-state">
-            <span>Not enough evaluated runs to determine the leading model.</span>
-          </div>
-        )}
+              <span className="kpi-subtext">
+                Arena Score: <strong>{topLeader.arenaIndex}/100</strong>
+              </span>
+            </>
+          ) : (
+            <span className="kpi-subtext">Not enough models</span>
+          )}
+        </div>
       </div>
 
-      {/* ⚠️ Discard & Failures Summary Card */}
-      <div className="kpi-card failure-summary-card">
+      {/* 3. Security Leader */}
+      <div className="kpi-card">
         <div className="kpi-header">
           <div className="kpi-title-row">
-            <span className="kpi-icon">⚠️</span>
-            <span className="kpi-title">Discards &amp; Security Failures</span>
+            <span className="kpi-icon">🛡️</span>
+            <span className="kpi-title">Security Leader</span>
           </div>
-          <span className="kpi-badge alert">{vulnerableOrFailingModels.length} Discarded</span>
+          <span className="kpi-badge safe">Highest Immunity</span>
         </div>
-
-        <div className="failure-summary-body">
-          <div className="failure-stat-row">
-            <div className="stat-box">
-              <span className="stat-number">{models.length}</span>
-              <span className="stat-desc">Evaluated Models</span>
-            </div>
-            <div className="stat-box danger">
-              <span className="stat-number">{vulnerableOrFailingModels.length}</span>
-              <span className="stat-desc">With Failures / Vulnerable</span>
-            </div>
-            <div className="stat-box">
-              <span className="stat-number">{totalRuns}</span>
-              <span className="stat-desc">Recorded Runs</span>
-            </div>
-          </div>
-
-          {vulnerableOrFailingModels.length > 0 ? (
-            <div className="vulnerable-list-compact">
-              <span className="list-title">Models to Discard:</span>
-              <div className="vulnerable-chips">
-                {vulnerableOrFailingModels.map((m) => (
-                  <span key={m.modelName} className="vuln-chip">
-                    🚨 {m.modelName} (ASR: {m.attackSuccessRatePct ?? 0}%, {m.avgQualityStars ?? 0}★)
-                  </span>
-                ))}
+        <div className="kpi-single-value-body">
+          {securityLeader ? (
+            <>
+              <div className="kpi-leader-name-row">
+                <span className="winner-name">{securityLeader.modelName}</span>
+                <span className="winner-size-tag">{securityLeader.paramSizeLabel}</span>
               </div>
-            </div>
+              <span className="kpi-subtext">
+                Immunity: <strong>{securityLeader.securityResilienceScore ?? 100}%</strong> (ASR: {securityLeader.attackSuccessRatePct ?? 0}%)
+              </span>
+            </>
           ) : (
-            <div className="vulnerable-empty">
-              <span>✅ No vulnerabilities or critical failures detected in evaluated models.</span>
-            </div>
+            <span className="kpi-subtext">No security benchmarks</span>
           )}
+        </div>
+      </div>
+
+      {/* 4. Average Speed */}
+      <div className="kpi-card">
+        <div className="kpi-header">
+          <div className="kpi-title-row">
+            <span className="kpi-icon">⚡</span>
+            <span className="kpi-title">Average Speed</span>
+          </div>
+          <span className="kpi-badge speed">Global throughput</span>
+        </div>
+        <div className="kpi-single-value-body">
+          <span className="kpi-big-number speed">
+            {avgSystemSpeed} <span className="unit">tok/s</span>
+          </span>
+          <span className="kpi-subtext">Average inference speed</span>
         </div>
       </div>
     </div>

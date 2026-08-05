@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ParameterState } from "@/components/wizard/run-wizard";
+import { useTheme } from "@/components/theme-provider";
 
 interface SettingsPanelProps {
   ollamaUrl: string;
@@ -36,6 +37,7 @@ export function SettingsPanel({
   isSaving,
   notice,
 }: SettingsPanelProps) {
+  const { theme, setTheme } = useTheme();
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -162,6 +164,41 @@ export function SettingsPanel({
               onChange={(e) => onParametersChange({ ...parameters, numPredict: e.target.value })}
             />
           </div>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h4>4. Appearance &amp; Application Theme</h4>
+        <div className="theme-options-grid">
+          <button
+            type="button"
+            className={`theme-option-card ${theme === "light" ? "selected" : ""}`}
+            onClick={() => setTheme("light")}
+          >
+            <span className="icon">☀️</span>
+            <span className="title">Light Mode</span>
+            <span className="desc">Clean light background with high contrast</span>
+          </button>
+
+          <button
+            type="button"
+            className={`theme-option-card ${theme === "dark" ? "selected" : ""}`}
+            onClick={() => setTheme("dark")}
+          >
+            <span className="icon">🌙</span>
+            <span className="title">Dark Mode</span>
+            <span className="desc">Dark interface optimized for low light</span>
+          </button>
+
+          <button
+            type="button"
+            className={`theme-option-card ${theme === "system" ? "selected" : ""}`}
+            onClick={() => setTheme("system")}
+          >
+            <span className="icon">💻</span>
+            <span className="title">System Theme</span>
+            <span className="desc">Automatically matches your OS preference</span>
+          </button>
         </div>
       </div>
 

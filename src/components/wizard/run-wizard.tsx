@@ -69,7 +69,8 @@ export function RunWizard({
 
   // Step 1: Preset & Prompt
   const [testType, setTestType] = useState<"general" | "security">("general");
-  const [attackType, setAttackType] = useState<SecurityAttackType>("INSTRUCTION_OVERRIDE");
+  const [attackType, setAttackType] = useState<SecurityAttackType>("DELIMITER_HIJACKING");
+  const [selectedAttacks, setSelectedAttacks] = useState<SecurityAttackType[]>(["DELIMITER_HIJACKING"]);
   const [systemPrompt, setSystemPrompt] = useState(
     "You are a precise technical assistant. Explain trade-offs clearly and do not invent facts."
   );
@@ -97,7 +98,8 @@ export function RunWizard({
     if (!id) {
       onScenarioNameChange("New Scenario");
       setTestType("general");
-      setAttackType("INSTRUCTION_OVERRIDE");
+      setAttackType("DELIMITER_HIJACKING");
+      setSelectedAttacks(["DELIMITER_HIJACKING"]);
       setSystemPrompt("You are a precise technical assistant. Explain trade-offs clearly and do not invent facts.");
       setUserMessages(["Compare REST and GraphQL for a small internal service."]);
       return;
@@ -107,19 +109,45 @@ export function RunWizard({
     if (scenario) {
       onScenarioNameChange(scenario.name);
       setTestType(scenario.category === "SECURITY" ? "security" : "general");
-      if (scenario.attackType) setAttackType(scenario.attackType);
+      if (scenario.attackType) {
+        setAttackType(scenario.attackType);
+        setSelectedAttacks([scenario.attackType]);
+      }
       setSystemPrompt(scenario.systemPrompt || "");
       setUserMessages(scenario.userMessages && scenario.userMessages.length > 0 ? scenario.userMessages : [""]);
     }
+  };
+
+  const applySecurityAttacks = (attacks: SecurityAttackType[]) => {
+    if (attacks.length === 0) return;
+    setTestType("security");
+    setSelectedAttacks(attacks);
+    const primaryAttack = attacks[0];
+    setAttackType(primaryAttack);
+    setSystemPrompt(SECURITY_TEMPLATES[primaryAttack].systemPrompt);
+
+    const combinedMessages = attacks.flatMap(
+      (type) => SECURITY_TEMPLATES[type]?.userMessages || []
+    );
+    setUserMessages(combinedMessages.length > 0 ? combinedMessages : [""]);
+  };
+
+  const toggleAttack = (type: SecurityAttackType) => {
+    let nextAttacks: SecurityAttackType[];
+    if (selectedAttacks.includes(type)) {
+      if (selectedAttacks.length <= 1) return;
+      nextAttacks = selectedAttacks.filter((a) => a !== type);
+    } else {
+      nextAttacks = [...selectedAttacks, type];
+    }
+    applySecurityAttacks(nextAttacks);
   };
 
   // Apply Security Preset
   const applyPreset = (preset: "general" | "security", selectedAttack: SecurityAttackType = attackType) => {
     setTestType(preset);
     if (preset === "security") {
-      const template = SECURITY_TEMPLATES[selectedAttack];
-      setSystemPrompt(template.systemPrompt);
-      setUserMessages(template.userMessages);
+      applySecurityAttacks([selectedAttack]);
     } else {
       setSystemPrompt("You are a precise technical assistant. Explain trade-offs clearly and do not invent facts.");
       setUserMessages(["Compare REST and GraphQL for a small internal service."]);
@@ -277,26 +305,48 @@ export function RunWizard({
 
           {testType === "security" && (
             <div className="attack-type-picker">
-              <label>Adversarial Attack Type (ASR):</label>
+              <div className="attack-picker-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label>Adversarial Attack Suite (Multi-Select):</label>
+                <div className="attack-quick-actions" style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    type="button"
+                    className="btn-ghost-sm"
+                    style={{ fontSize: "0.75rem" }}
+                    onClick={() => applySecurityAttacks(Object.keys(SECURITY_TEMPLATES) as SecurityAttackType[])}
+                  >
+                    ⚡ Select All ({Object.keys(SECURITY_TEMPLATES).length} Attacks)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost-sm"
+                    style={{ fontSize: "0.75rem" }}
+                    onClick={() => applySecurityAttacks(["DELIMITER_HIJACKING"])}
+                  >
+                    🔄 Reset Single
+                  </button>
+                </div>
+              </div>
               <div className="attack-options">
                 {(Object.keys(SECURITY_TEMPLATES) as SecurityAttackType[]).map((type) => {
                   const tmpl = SECURITY_TEMPLATES[type];
+                  const isSelected = selectedAttacks.includes(type);
                   return (
                     <button
                       key={type}
                       type="button"
-                      className={`attack-btn ${attackType === type ? "active" : ""}`}
-                      onClick={() => {
-                        setAttackType(type);
-                        applyPreset("security", type);
-                      }}
+                      className={`attack-btn ${isSelected ? "active" : ""}`}
+                      onClick={() => toggleAttack(type)}
                     >
-                      <span>{tmpl.name}</span>
+                      <span>{isSelected ? "✓ " : ""}{tmpl.name}</span>
                     </button>
                   );
                 })}
               </div>
-              <p className="attack-description">{SECURITY_TEMPLATES[attackType].description}</p>
+              <p className="attack-description">
+                {selectedAttacks.length === 1
+                  ? SECURITY_TEMPLATES[selectedAttacks[0]]?.description
+                  : `${selectedAttacks.length} security attack tests selected for execution in this run (${userMessages.length} test vectors total).`}
+              </p>
             </div>
           )}
 
@@ -315,21 +365,25 @@ export function RunWizard({
 
             <div className="turns-builder-container">
               <div className="turns-header">
-                <label>User Message Turns ({userMessages.length}):</label>
+                <label>
+                  {testType === "security" ? `Security Test Vectors (${userMessages.length}):` : `User Message Turns (${userMessages.length}):`}
+                </label>
                 <button type="button" className="btn-ghost-sm" onClick={addTurn}>
-                  + Add Conversation Turn
+                  {testType === "security" ? "+ Add Test Vector" : "+ Add Conversation Turn"}
                 </button>
               </div>
 
               {userMessages.map((msg, index) => (
                 <div key={index} className="turn-input-row">
-                  <span className="turn-badge">Turn {index + 1}</span>
+                  <span className="turn-badge">
+                    {testType === "security" ? `Vector ${index + 1}` : `Turn ${index + 1}`}
+                  </span>
                   <textarea
                     rows={2}
                     className="styled-textarea flex-1"
                     value={msg}
                     onChange={(e) => updateTurn(index, e.target.value)}
-                    placeholder={`User message for turn ${index + 1}...`}
+                    placeholder={testType === "security" ? `Attack payload for vector ${index + 1}...` : `User message for turn ${index + 1}...`}
                   />
                   {userMessages.length > 1 && (
                     <button
@@ -452,7 +506,9 @@ export function RunWizard({
             <div className="summary-row">
               <span className="label">Test Type:</span>
               <span className="value bold">
-                {testType === "security" ? `🛡️ Red-Teaming (${SECURITY_TEMPLATES[attackType].name})` : "🧠 General Quality"}
+                {testType === "security"
+                  ? `🛡️ Red-Teaming (${selectedAttacks.length} Attack Vector${selectedAttacks.length > 1 ? "s" : ""})`
+                  : "🧠 General Quality"}
               </span>
             </div>
             <div className="summary-row">

@@ -1,79 +1,136 @@
 "use client";
 
+import Link from "next/link";
 import type { TestRun } from "@/lib/contracts";
+import { useTheme } from "@/components/theme-provider";
 
-export type ActiveTab = "analytics" | "wizard" | "history" | "settings";
+export type ActiveTab = "analytics" | "suites" | "monitor" | "settings" | "wizard" | "history";
 
 interface TopbarNavProps {
   activeTab: ActiveTab;
-  onTabChange: (tab: ActiveTab) => void;
-  activeRun: TestRun | null;
-  ollamaUrl: string;
+  onTabChange?: (tab: ActiveTab) => void;
+  activeRun?: TestRun | null;
+  ollamaUrl?: string;
 }
 
-export function TopbarNav({ activeTab, onTabChange, activeRun, ollamaUrl }: TopbarNavProps) {
+export function TopbarNav({
+  activeTab,
+  onTabChange,
+  activeRun = null,
+  ollamaUrl = "http://127.0.0.1:11434",
+}: TopbarNavProps) {
+  const { theme, setTheme } = useTheme();
   const isRunActive = activeRun && ["PENDING", "RUNNING"].includes(activeRun.status);
+
+  const isAnalyticsActive = activeTab === "analytics";
+  const isSuitesActive = activeTab === "suites" || activeTab === "wizard";
+  const isMonitorActive = activeTab === "monitor" || activeTab === "history";
+  const isSettingsActive = activeTab === "settings";
+
+  const handleNav = (tab: ActiveTab) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+  };
 
   return (
     <header className="topbar-nav">
       <div className="topbar-left">
-        <div className="brand-mark">SLM</div>
-        <div className="brand-title-group">
-          <span className="brand-title">SLMArena</span>
-          <span className="brand-badge">v1.4</span>
-        </div>
+        <Link href="/" className="brand-link" onClick={() => handleNav("analytics")}>
+          <div className="brand-mark">SLM</div>
+          <div className="brand-title-group">
+            <span className="brand-title">SLMarena</span>
+            <span className="brand-badge">v2.0</span>
+          </div>
+        </Link>
       </div>
 
       <nav className="topbar-menu">
-        <button
-          type="button"
-          className={`topbar-item ${activeTab === "analytics" ? "active" : ""}`}
-          onClick={() => onTabChange("analytics")}
+        <Link
+          href="/"
+          className={`topbar-item ${isAnalyticsActive ? "active" : ""}`}
+          onClick={() => handleNav("analytics")}
         >
           <span className="nav-icon">📊</span>
-          <span className="nav-label">Arena &amp; Analytics</span>
-        </button>
+          <span className="nav-label">Leaderboard</span>
+        </Link>
 
-        <button
-          type="button"
-          className={`topbar-item ${activeTab === "wizard" ? "active" : ""}`}
-          onClick={() => onTabChange("wizard")}
+        <Link
+          href="/suites"
+          className={`topbar-item ${isSuitesActive ? "active" : ""}`}
+          onClick={() => handleNav("suites")}
         >
-          <span className="nav-icon">🚀</span>
-          <span className="nav-label">New Run</span>
-          <span className="nav-pill">Wizard</span>
-        </button>
+          <span className="nav-icon">🧪</span>
+          <span className="nav-label">Test Suites</span>
+        </Link>
 
-        <button
-          type="button"
-          className={`topbar-item ${activeTab === "history" ? "active" : ""}`}
-          onClick={() => onTabChange("history")}
+        <Link
+          href="/monitor"
+          className={`topbar-item ${isMonitorActive ? "active" : ""}`}
+          onClick={() => handleNav("monitor")}
         >
-          <span className="nav-icon">📑</span>
-          <span className="nav-label">History &amp; Failures</span>
-          {isRunActive && <span className="nav-status-pulse" title="Live run..." />}
-        </button>
+          <span className="nav-icon">⚡</span>
+          <span className="nav-label">Monitor</span>
+          {isRunActive && <span className="nav-status-pulse" title="Live execution..." />}
+        </Link>
 
-        <button
-          type="button"
-          className={`topbar-item ${activeTab === "settings" ? "active" : ""}`}
-          onClick={() => onTabChange("settings")}
+        <Link
+          href="/settings"
+          className={`topbar-item ${isSettingsActive ? "active" : ""}`}
+          onClick={() => handleNav("settings")}
         >
           <span className="nav-icon">⚙️</span>
           <span className="nav-label">Settings</span>
-        </button>
+        </Link>
       </nav>
 
       <div className="topbar-right">
+        {/* Theme Switcher Controls */}
+        <div className="theme-switcher-pill">
+          <button
+            type="button"
+            className={`theme-btn ${theme === "light" ? "active" : ""}`}
+            onClick={() => setTheme("light")}
+            title="Light Mode"
+          >
+            ☀️
+          </button>
+          <button
+            type="button"
+            className={`theme-btn ${theme === "dark" ? "active" : ""}`}
+            onClick={() => setTheme("dark")}
+            title="Dark Mode"
+          >
+            🌙
+          </button>
+          <button
+            type="button"
+            className={`theme-btn ${theme === "system" ? "active" : ""}`}
+            onClick={() => setTheme("system")}
+            title="System Theme"
+          >
+            💻
+          </button>
+        </div>
+
         {isRunActive ? (
-          <div className="topbar-active-run-pill" onClick={() => onTabChange("history")}>
+          <Link
+            href="/monitor"
+            className="topbar-active-run-pill"
+            onClick={() => handleNav("monitor")}
+          >
             <span className="dot pulse" />
-            <span className="text">Live Run ({activeRun.results.filter((r) => r.status === "COMPLETED").length}/{activeRun.results.length})</span>
-          </div>
+            <span className="text">
+              Live Run ({activeRun.results.filter((r) => r.status === "COMPLETED").length}/
+              {activeRun.results.length})
+            </span>
+          </Link>
         ) : (
           <div className="header-status-pill">
             <span className="dot online" />
-            <span>Ollama: <code className="mono">{ollamaUrl}</code></span>
+            <span>
+              Ollama: <code className="mono">{ollamaUrl}</code>
+            </span>
           </div>
         )}
       </div>
