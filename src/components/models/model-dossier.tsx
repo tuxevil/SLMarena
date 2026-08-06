@@ -9,9 +9,10 @@ interface ModelDossierProps {
   modelName: string;
   modelSummary: LeaderboardModelRow | null;
   runs: TestRun[];
+  hideBackLink?: boolean;
 }
 
-export function ModelDossier({ modelName, modelSummary, runs }: ModelDossierProps) {
+export function ModelDossier({ modelName, modelSummary, runs, hideBackLink = false }: ModelDossierProps) {
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedInspectItem, setSelectedInspectItem] = useState<{
@@ -46,6 +47,7 @@ export function ModelDossier({ modelName, modelSummary, runs }: ModelDossierProp
   const stars = modelSummary?.avgQualityStars ?? null;
   const grammar = modelSummary?.avgGrammar ?? stars;
   const compliance = modelSummary?.avgCompliance ?? stars;
+  const accuracy = modelSummary?.avgAccuracy ?? stars;
   const securityResilience = modelSummary?.securityResilienceScore ?? 100;
 
   const renderStars = (rating: number | null) => {
@@ -70,11 +72,13 @@ export function ModelDossier({ modelName, modelSummary, runs }: ModelDossierProp
   return (
     <div className="model-dossier-wrapper">
       {/* BACK BUTTON */}
-      <div className="dossier-back">
-        <Link href="/" className="back-link">
-          ← Back to Leaderboard
-        </Link>
-      </div>
+      {!hideBackLink && (
+        <div className="dossier-back">
+          <Link href="/" className="back-link">
+            ← Back to Leaderboard
+          </Link>
+        </div>
+      )}
 
       {/* HEADER CARD */}
       <div className="dossier-header-card">
@@ -114,6 +118,12 @@ export function ModelDossier({ modelName, modelSummary, runs }: ModelDossierProp
             <span className="lbl">Compliance</span>
             <span className="val">
               {compliance != null ? `${compliance.toFixed(1)}/5` : "N/A"}
+            </span>
+          </div>
+          <div className="summary-card">
+            <span className="lbl">Accuracy</span>
+            <span className="val">
+              {accuracy != null ? `${accuracy.toFixed(1)}/5` : "N/A"}
             </span>
           </div>
           <div className="summary-card">

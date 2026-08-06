@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type {
   CreateRunInput,
   AppSettings,
@@ -6,9 +7,11 @@ import type {
   ModelResult,
   RunEvent,
   Scenario,
+  SecurityAttackType,
   TestRun,
   TurnResult,
 } from "@/lib/contracts";
+import { SECURITY_TEMPLATES } from "@/lib/security-templates";
 import {
   deletePersistedResult,
   loadPersistedSettings,
@@ -94,16 +97,18 @@ export const benchmarkStore = {
   },
 
   async hydrate() {
-    if (state.hydrated) return;
     if (state.hydrationPromise) return state.hydrationPromise;
     state.hydrationPromise = (async () => {
-      const [persisted, persistedSettings] = await Promise.all([loadPersistedState(), loadPersistedSettings()]);
-      if (persistedSettings) state.settings = persistedSettings;
-      if (persisted) {
-        for (const run of persisted.runs) restoreRun(run.run, run.config);
-        for (const scenario of persisted.scenarios) state.scenarios.set(scenario.id, scenario);
+      if (!state.hydrated) {
+        const [persisted, persistedSettings] = await Promise.all([loadPersistedState(), loadPersistedSettings()]);
+        if (persistedSettings) state.settings = persistedSettings;
+        if (persisted) {
+          for (const run of persisted.runs) restoreRun(run.run, run.config);
+          for (const scenario of persisted.scenarios) state.scenarios.set(scenario.id, scenario);
+        }
+        state.hydrated = true;
       }
-      state.hydrated = true;
+      await seedSecurityScenarios();
     })().finally(() => {
       state.hydrationPromise = undefined;
     });
@@ -401,6 +406,36 @@ function getRequiredResult(run: StoredRun, resultId: string) {
   const result = run.results.find((item) => item.id === resultId);
   if (!result) throw new Error(`Result ${resultId} was not found.`);
   return result;
+}
+
+async function seedSecurityScenarios() {
+  for (const attackType of Object.keys(SECURITY_TEMPLATES) as SecurityAttackType[]) {
+    const template = SECURITY_TEMPLATES[attackType];
+    const seededId = seedScenarioId(attackType);
+    const existing = [...state.scenarios.values()].find(
+      (scenario) => scenario.id === seededId || scenario.attackType === attackType,
+    );
+    if (existing) continue;
+    const now = new Date().toISOString();
+    const scenario: Scenario = {
+      id: seededId,
+      category: "SECURITY",
+      attackType,
+      name: template.name,
+      systemPrompt: template.systemPrompt,
+      userMessages: template.userMessages,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await persistScenario(scenario);
+    state.scenarios.set(scenario.id, scenario);
+  }
+}
+
+function seedScenarioId(attackType: SecurityAttackType) {
+  const hash = createHash("sha256").update(`slmarena:security:${attackType}`).digest("hex");
+  const hex = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  return hex;
 }
 
 function emit(run: StoredRun, type: string) {

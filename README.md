@@ -49,7 +49,7 @@ The application is structured into **4 independent core modules**, cleanly separ
    - **Right Panel:** **Mode A (Model Onboarding)** (run the active editor scenario on a single model), **Mode B (Suite Update)** (run 1 scenario across ALL local models), and **Custom Matrix Mode** (N models $\times$ M scenarios) with a live model refresh trigger (`[ 🔄 Refresh Models ]`).
 3. **⚡ Live Monitor (`/monitor`):** Technical operations and real-time inference monitoring. Displays local Ollama server status (ping, installed models, active model loaded in VRAM via `/api/ps`, VRAM usage), active run progress bar, token-by-token live SSE streaming box, queue flow controls (*Pause*, *Resume*, *Cancel*, *Retry Failed*), and run history log.
 4. **⚙️ Settings (`/settings`):** Endpoint configurations (Ollama URL, Evaluator API base URL & key), inference hyper-parameters, and theme options.
-5. **Level 2: Model Profile (`/models/[modelId]`):** Technical dossier for an individual model. Displays model averages (Rating, Grammar, Compliance, Security Resilience), filterable executed test benchmarks table, and inspector triggers.
+5. **Level 2: Model Profile (`/models/[modelId]` & Inline Modal):** Technical dossier for an individual model available both as a dedicated page and an interactive modal when clicking `[View Profile]` on the Leaderboard. Displays model averages (Rating, Grammar, Compliance, Accuracy, Security Resilience), filterable executed test benchmarks table, and inspector triggers.
 6. **Level 3: Test Inspector Drawer:** Slide-over panel sliding from the right without losing background context. Displays System Prompt, User Prompt, SLM Output Response, Evaluator Verdict (star ratings, qualitative feedback, vulnerability analysis), and Execution Telemetry (*TTFT, Speed, Output Tokens, Latency*).
 
 ## Highlights
@@ -270,7 +270,7 @@ For multi-user or background worker processing:
 ### 1. Leaderboard (`/`)
 - View executive KPI summary cards (*Evaluated Models*, *Overall Leader*, *Security Leader*, *Average Speed*).
 - Interact with the Master Model Table, filter by size/category, and adjust Arena Score weights (`[⚙ Weights]`).
-- Click `[View Profile]` to open the run's Side-by-Side Comparison (or the dedicated `/models/[modelId]` dossier) for a chosen model.
+- Click `[View Profile]` to open the Model Profile modal displaying overall model averages (Rating, Grammar, Compliance, Accuracy, Security Resilience) and its complete executed test benchmark history.
 - Analyze real-time linked Scatter Plots and Radar Charts driven by checked table rows `[x]`.
 - Use the **Run History** section for model-grouped results (per-model averages), run-list matrix, side-by-side comparison, sample deletion, and manual review (`APPROVED` / `REJECTED`).
 
@@ -287,8 +287,8 @@ For multi-user or background worker processing:
 ### 4. Settings (`/settings`)
 - Configure Ollama endpoint URL, LLM Judge credentials, default inference parameters, and Light/Dark/System theme choices.
 
-### 5. Model Profile (`/models/[modelId]`)
-- Inspect a specific model's summary metrics, average ratings, and filterable executed test benchmark history.
+### 5. Model Profile (`/models/[modelId]` & Modal)
+- Inspect a specific model's summary metrics (Rating, Grammar, Compliance, Accuracy, Security Resilience), average ratings, and filterable executed test benchmark history.
 
 ## HTTP API Overview
 

@@ -18,6 +18,7 @@ import { QualitySpeedScatterPlot } from "@/components/analytics/scatter-plot";
 import { RunWizard, type ModelOption, type ParameterState } from "@/components/wizard/run-wizard";
 import { RunHistoryMatrix } from "@/components/history/run-history-matrix";
 import { SideBySideComparison } from "@/components/history/side-by-side-comparison";
+import { ModelDossier } from "@/components/models/model-dossier";
 import { SettingsPanel } from "@/components/settings/settings-panel";
 
 type SettingsPayload = {
@@ -74,7 +75,37 @@ export function BenchmarkDashboard() {
   const [historyModel, setHistoryModel] = useState("");
   const [historyVulnerableOnly, setHistoryVulnerableOnly] = useState(false);
   const [selectedRunForComparison, setSelectedRunForComparison] = useState<TestRun | null>(null);
+  const [selectedModelForProfile, setSelectedModelForProfile] = useState<string | null>(null);
+  const [modelProfileRuns, setModelProfileRuns] = useState<TestRun[]>([]);
+  const [isLoadingProfileRuns, setIsLoadingProfileRuns] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  // Fetch all runs for selected model profile
+  useEffect(() => {
+    if (!selectedModelForProfile) {
+      setModelProfileRuns([]);
+      return;
+    }
+
+    setIsLoadingProfileRuns(true);
+    fetch(`/api/runs?pageSize=100&model=${encodeURIComponent(selectedModelForProfile)}`)
+      .then((res) => res.json() as Promise<{ runs?: TestRun[] }>)
+      .then((data) => {
+        const fetchedRuns = data.runs ?? [];
+        const runMap = new Map<string, TestRun>();
+        for (const r of [...history, ...fetchedRuns]) {
+          runMap.set(r.id, r);
+        }
+        setModelProfileRuns(Array.from(runMap.values()));
+      })
+      .catch((err) => {
+        console.error("Failed to load model profile runs:", err);
+        setModelProfileRuns(history);
+      })
+      .finally(() => {
+        setIsLoadingProfileRuns(false);
+      });
+  }, [selectedModelForProfile, history]);
 
   // Hydrate settings and scenarios on mount
   useEffect(() => {
@@ -415,12 +446,7 @@ export function BenchmarkDashboard() {
                 )
               }
               onSelectModelProfile={(modelName) => {
-                const matchedRun = history.find((r) => r.models.includes(modelName));
-                if (matchedRun) {
-                  setSelectedRunForComparison(matchedRun);
-                } else {
-                  setActiveTab("history");
-                }
+                setSelectedModelForProfile(modelName);
               }}
             />
 
@@ -521,6 +547,44 @@ export function BenchmarkDashboard() {
             onClose={() => setSelectedRunForComparison(null)}
             onHumanReview={handleHumanReview}
           />
+        )}
+
+        {/* Model Profile & Test History Modal */}
+        {selectedModelForProfile && (
+          <div className="side-by-side-modal-backdrop" onClick={() => setSelectedModelForProfile(null)}>
+            <div className="side-by-side-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "1200px" }}>
+              <div className="modal-header">
+                <div className="header-title-group">
+                  <div className="title-row">
+                    <span className="icon">📊</span>
+                    <h2>Model Profile &amp; Test History: {selectedModelForProfile}</h2>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-close-modal"
+                  onClick={() => setSelectedModelForProfile(null)}
+                >
+                  ✕ Close
+                </button>
+              </div>
+
+              <div className="model-profile-modal-body" style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+                {isLoadingProfileRuns ? (
+                  <div className="loading-container">
+                    <span className="dot pulse" /> Loading tests for model...
+                  </div>
+                ) : (
+                  <ModelDossier
+                    modelName={selectedModelForProfile}
+                    modelSummary={leaderboardModels.find((m) => m.modelName === selectedModelForProfile) ?? null}
+                    runs={modelProfileRuns}
+                    hideBackLink={true}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>
