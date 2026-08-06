@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Professional repository metadata: MIT license, governance documents
   (CONTRIBUTING, SECURITY, CODE_OF_CONDUCT), issue and PR templates,
   `.editorconfig`, and `.nvmrc`.
+- MCP server (`npm run mcp`, PRD v2.1): Streamable HTTP transport exposing the
+  SLMarena REST API as 7 tools (`get_arena_leaderboard`, `get_model_profile`,
+  `list_test_scenarios`, `get_test_run_details`, `create_test_scenario`,
+  `launch_matrix_test`, `check_job_status`) plus read-only resources
+  (`slmarena://leaderboard`, `slmarena://scenarios`) for agent-driven
+  benchmarking. Configured via `MCP_PORT` and `APP_URL`.
 
 ### Changed
 
