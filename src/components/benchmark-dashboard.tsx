@@ -82,15 +82,13 @@ export function BenchmarkDashboard() {
 
   // Fetch all runs for selected model profile
   useEffect(() => {
-    if (!selectedModelForProfile) {
-      setModelProfileRuns([]);
-      return;
-    }
+    if (!selectedModelForProfile) return;
 
-    setIsLoadingProfileRuns(true);
+    let cancelled = false;
     fetch(`/api/runs?pageSize=100&model=${encodeURIComponent(selectedModelForProfile)}`)
       .then((res) => res.json() as Promise<{ runs?: TestRun[] }>)
       .then((data) => {
+        if (cancelled) return;
         const fetchedRuns = data.runs ?? [];
         const runMap = new Map<string, TestRun>();
         for (const r of [...history, ...fetchedRuns]) {
@@ -99,12 +97,17 @@ export function BenchmarkDashboard() {
         setModelProfileRuns(Array.from(runMap.values()));
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error("Failed to load model profile runs:", err);
         setModelProfileRuns(history);
       })
       .finally(() => {
-        setIsLoadingProfileRuns(false);
+        if (!cancelled) setIsLoadingProfileRuns(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedModelForProfile, history]);
 
   // Hydrate settings and scenarios on mount
@@ -447,6 +450,8 @@ export function BenchmarkDashboard() {
               }
               onSelectModelProfile={(modelName) => {
                 setSelectedModelForProfile(modelName);
+                setModelProfileRuns([]);
+                setIsLoadingProfileRuns(true);
               }}
             />
 
@@ -551,7 +556,7 @@ export function BenchmarkDashboard() {
 
         {/* Model Profile & Test History Modal */}
         {selectedModelForProfile && (
-          <div className="side-by-side-modal-backdrop" onClick={() => setSelectedModelForProfile(null)}>
+          <div className="side-by-side-modal-backdrop" onClick={() => { setSelectedModelForProfile(null); setModelProfileRuns([]); setIsLoadingProfileRuns(false); }}>
             <div className="side-by-side-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "1200px" }}>
               <div className="modal-header">
                 <div className="header-title-group">
@@ -563,7 +568,7 @@ export function BenchmarkDashboard() {
                 <button
                   type="button"
                   className="btn-close-modal"
-                  onClick={() => setSelectedModelForProfile(null)}
+                  onClick={() => { setSelectedModelForProfile(null); setModelProfileRuns([]); setIsLoadingProfileRuns(false); }}
                 >
                   ✕ Close
                 </button>
