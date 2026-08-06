@@ -61,7 +61,12 @@ async function drainQueue() {
 
 async function executeBenchmark(runId: string) {
   await benchmarkStore.hydrate();
-  const run = benchmarkStore.getStoredRun(runId);
+  let run = benchmarkStore.getStoredRun(runId);
+  if (!run) {
+    console.log(`[slmarena] run ${runId} not in worker store; recovering from database`);
+    await benchmarkStore.refreshRun(runId);
+    run = benchmarkStore.getStoredRun(runId);
+  }
   if (!run || ["CANCELLED", "COMPLETED", "FAILED"].includes(run.status)) return;
 
   benchmarkStore.updateRun(runId, { status: "RUNNING", startedAt: new Date().toISOString() });
