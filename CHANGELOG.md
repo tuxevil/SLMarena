@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Project renamed from "Compare SLM" to **SLMarena**; repository moved to
   `https://github.com/tuxevil/SLMarena`.
+- `OLLAMA_URL` documented as unset-by-default in `.env.example`: leaving it
+  empty lets `/api/ollama/models` resolve the Ollama URL saved in the app
+  settings instead of shadowing it with a stale local default.
 
 ## [0.1.0] - 2026-08-03
 
