@@ -135,60 +135,55 @@ test.beforeEach(async ({ page }) => {
 test("renders the arena dashboard and displays top model winner", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("SLMArena")).toBeVisible();
-  await expect(page.getByText("Top Winning SLM Model")).toBeVisible();
-  await expect(page.locator(".winner-name", { hasText: "llama3.2" })).toBeVisible();
+  await expect(page.getByText("Overall Leader")).toBeVisible();
+  await expect(page.locator(".winner-name", { hasText: "llama3.2" }).first()).toBeVisible();
 });
 
-test("supports scenario saving and adding conversation turns in execution builder", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "New Run" }).click();
+test("supports scenario saving and adding conversation turns in test suite editor", async ({ page }) => {
+  await page.goto("/suites");
 
   // Save scenario
+  await page.getByPlaceholder("e.g. Delimiter Hijacking Test v1").fill("Smoke test");
   await page.getByRole("button", { name: "💾 Save to Library" }).click();
-  await expect(page.locator(".global-notice-banner", { hasText: "saved to library" })).toBeVisible();
+  await expect(page.locator(".notice-banner", { hasText: "saved to library" })).toBeVisible();
 
   // Add turn
   await page.getByRole("button", { name: "+ Add Conversation Turn" }).click();
   await expect(page.getByText("Turn 2")).toBeVisible();
 });
 
-test("launches a benchmark via the 3-step wizard", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "New Run" }).click();
+test("launches a benchmark from the suite editor and routes to the monitor", async ({ page }) => {
+  await page.goto("/suites");
+  await expect(page.locator(".onboarding-mode-box select")).toHaveValue("llama3.2");
 
-  // Step 1
-  await page.getByRole("button", { name: /Next: Select Models/ }).click();
+  // Launch Mode A: run all scenarios against the onboarded model
+  await page.getByRole("button", { name: /Run ALL Tests on this Model/ }).click();
 
-  // Step 2
-  await page.getByRole("button", { name: /Scan Local Ollama/ }).click();
-  await page.locator(".model-checkbox-card", { hasText: "llama3.2" }).click();
-  await page.getByRole("button", { name: /Next: Configure & Launch/ }).click();
-
-  // Step 3
-  await page.getByRole("button", { name: /Launch Benchmark & Evaluate/ }).click();
-
-  // Should transition to history matrix tab
-  await expect(page.locator(".history-matrix-panel")).toBeVisible();
+  // Should redirect to the monitor page
+  await expect(page).toHaveURL(/\/monitor/);
+  await expect(page.getByText("Queue History & Executed Runs")).toBeVisible();
+  await expect(page.getByText("#run-1", { exact: false })).toBeVisible();
 });
 
-test("displays detailed model-grouped view in history tab", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "History & Failures" }).click();
+test("displays executed runs and detailed inspection on the monitor page", async ({ page }) => {
+  await page.goto("/monitor");
 
-  await expect(page.getByText("Model-Grouped Results")).toBeVisible();
-  await expect(page.locator(".group-card-header", { hasText: "llama3.2" })).toBeVisible();
-  await page.locator(".sample-item-summary").first().click();
+  await expect(page.getByText("Queue History & Executed Runs")).toBeVisible();
+  await expect(page.locator("tr", { hasText: "llama3.2" }).first()).toBeVisible();
+
+  await page.getByRole("button", { name: "🔍 View Inspection" }).first().click();
   await expect(page.getByText("REST is simpler for this internal service.")).toBeVisible();
 });
 
-test("saves global settings in settings tab", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Settings" }).click();
+test("saves global settings in settings page", async ({ page }) => {
+  await page.goto("/settings");
   await page.getByPlaceholder("https://api.openai.com/v1").fill("https://judge.example/v1");
   await page.getByPlaceholder("gpt-4o-mini, openrouter/auto...").fill("judge");
+  await page.getByPlaceholder("sk-...").fill("sk-test-123");
   await page.getByRole("button", { name: "💾 Save Settings" }).click();
 
-  await expect(page.locator(".global-notice-banner", { hasText: "Settings saved successfully." })).toBeVisible();
+  // Key is stored and no longer editable as plain text
+  await expect(page.getByPlaceholder("•••••••••••••••• (Configured)")).toBeVisible();
 });
 
 function createRun(status: string, resultPatch: Record<string, unknown> = {}) {
