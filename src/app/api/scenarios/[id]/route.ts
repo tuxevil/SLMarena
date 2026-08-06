@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { benchmarkStore } from "@/lib/benchmark-store";
 import { scenarioSchema } from "@/lib/contracts";
 
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  await benchmarkStore.hydrate();
+  const { id } = await params;
+  const scenario = benchmarkStore.getScenario(id);
+  return scenario
+    ? NextResponse.json({ scenario })
+    : NextResponse.json({ error: "Scenario not found." }, { status: 404 });
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   await benchmarkStore.hydrate();
   const { id } = await params;

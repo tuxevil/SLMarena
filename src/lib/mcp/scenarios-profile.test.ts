@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestScenario, listTestScenarios } from "./scenarios";
+import { createTestScenario, deleteTestScenario, getTestScenario, listTestScenarios, updateTestScenario } from "./scenarios";
 import { getModelProfile } from "./profile";
 
 function stubFetch(payload: unknown, status = 200) {
@@ -63,6 +63,70 @@ describe("createTestScenario", () => {
     expect(body.attackType).toBe("ENCODING_OBFUSCATION");
     expect(body.systemPrompt).toBe("guard");
     expect(body.userMessages).toEqual(["decode"]);
+  });
+});
+
+describe("getTestScenario", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("fetches a single scenario by id", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ scenario: scenarios[0] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = (await getTestScenario({ scenario_id: "s1" })) as { scenario: { id: string } };
+    expect(result.scenario.id).toBe("s1");
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe("http://localhost:3000/api/scenarios/s1");
+  });
+});
+
+describe("updateTestScenario", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("patches the scenario and returns it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ scenario: { ...scenarios[1], name: "Renamed", id: "s2" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = (await updateTestScenario({
+      scenario_id: "s2",
+      name: "Renamed",
+      category: "GENERAL",
+      system_prompt: "new prompt",
+      user_messages: ["hello"],
+    })) as { scenario: { id: string; name: string } };
+
+    expect(result.scenario.id).toBe("s2");
+    expect(result.scenario.name).toBe("Renamed");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/scenarios/s2");
+    expect(init.method).toBe("PATCH");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.systemPrompt).toBe("new prompt");
+  });
+});
+
+describe("deleteTestScenario", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends DELETE and reports success", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = (await deleteTestScenario({ scenario_id: "s2" })) as { deleted: boolean };
+    expect(result.deleted).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/scenarios/s2");
+    expect(init.method).toBe("DELETE");
   });
 });
 

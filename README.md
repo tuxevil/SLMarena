@@ -300,14 +300,14 @@ For multi-user or background worker processing:
 | --- | --- | --- |
 | `GET`, `PATCH` | `/api/settings` | Retrieve or update application configuration and credentials. |
 | `GET`, `POST` | `/api/scenarios` | List saved scenarios or create a new benchmark scenario. |
-| `PATCH`, `DELETE` | `/api/scenarios/:id` | Update or delete a specific benchmark scenario. |
+| `GET`, `PATCH`, `DELETE` | `/api/scenarios/:id` | Fetch, update, or delete a specific benchmark scenario. |
 | `GET`, `POST` | `/api/runs` | Search benchmark history (with pagination & filters) or submit a new run. |
 | `GET` | `/api/runs/:id` | Fetch details and results snapshot for a single run. |
 | `GET` | `/api/runs/:id/events` | Stream real-time run progress events via Server-Sent Events (SSE). |
 | `POST` | `/api/runs/:id/pause` | Pause execution of a queued or running benchmark. |
 | `POST` | `/api/runs/:id/resume` | Resume execution of a paused benchmark. |
 | `POST` | `/api/runs/:id/cancel` | Cancel execution of an active or pending benchmark. |
-| `DELETE` | `/api/runs/:id/results/:resultId` | Delete a single model sample result from a run. |
+| `GET`, `DELETE` | `/api/runs/:id/results/:resultId` | Fetch or delete a single model sample result from a run. |
 | `GET` | `/api/ollama/models` | Discover installed models (`/api/tags`) & active VRAM models (`/api/ps`) from target Ollama instance. |
 | `GET` | `/api/analysis` | Retrieve aggregated scenario metrics across runs. |
 | `GET` | `/api/leaderboard` | Query Arena Leaderboard statistics with custom dynamic weights and filters. |
@@ -336,10 +336,20 @@ The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `h
 | Tool | Purpose |
 | --- | --- |
 | `get_arena_leaderboard` | Read the current Arena Leaderboard with custom KPI weights and filters. |
+| `list_ollama_models` | List the models installed on the Ollama server connected to SLMarena, which are loaded in VRAM, and the currently active model. |
 | `get_model_profile` | Fetch per-model profile/analysis from the leaderboard and optional scenario slice. |
 | `list_test_scenarios` | List saved test scenarios. |
+| `get_test_scenario` | Fetch one saved test scenario by ID (system prompt, user messages, category, attack type). |
 | `create_test_scenario` | Create a new scenario. |
+| `update_test_scenario` | Edit an existing scenario by ID (replaces name, category, attack type, prompts). |
+| `delete_test_scenario` | Permanently delete a scenario by ID. |
 | `launch_matrix_test` | Launch a benchmark run over a matrix of models × scenarios (optionally `["ALL"]` for every Ollama model). |
+| `list_runs` | Search run history with filters (keyword, date, model, min score, vulnerable-only, pagination). |
+| `pause_run` / `resume_run` / `cancel_run` | Pause, resume, or cancel a queued/running benchmark run. |
+| `get_settings` / `update_settings` | Read or update app settings (Ollama URL, evaluator credentials, default hyper-parameters). |
+| `get_analysis` | Aggregate a scenario's performance across all evaluated models (per-model samples, avg stars, ASR). |
+| `review_result` | Override the judge verdict with a human review (APPROVED/REJECTED/REVIEWED/UNREVIEWED) and notes. |
+| `get_run_result_details` | Fetch one individual model result of a run (turns, telemetry, judge evaluation). |
 | `get_test_run_details` | Fetch run status plus model results. |
 | `check_job_status` | Poll `launch_matrix_test` progress by run ID. |
 

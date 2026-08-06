@@ -28,6 +28,66 @@ export async function listTestScenarios(args: ListScenariosInput): Promise<unkno
   };
 }
 
+export const getScenarioInputSchema = {
+  scenario_id: z.string().min(1).describe("ID del escenario a consultar."),
+};
+
+export type GetScenarioInput = { scenario_id: string };
+
+export async function getTestScenario(args: GetScenarioInput): Promise<unknown> {
+  const data = await slmarenaFetch<{ scenario: Scenario }>(`/api/scenarios/${encodeURIComponent(args.scenario_id)}`);
+  return { scenario: data.scenario };
+}
+
+export const updateScenarioInputSchema = {
+  scenario_id: z.string().min(1).describe("ID del escenario a editar."),
+  name: z.string().min(1).max(255).describe("Nombre descriptivo del escenario."),
+  category: z.enum(["GENERAL", "SECURITY"]).default("GENERAL"),
+  attack_vector: z
+    .enum([
+      "INSTRUCTION_OVERRIDE",
+      "SYSTEM_PROMPT_LEAKAGE",
+      "INDIRECT_PROMPT_INJECTION",
+      "DELIMITER_HIJACKING",
+      "CONTEXT_OVERSTUFFING",
+      "ENCODING_OBFUSCATION",
+      "TOOL_PARAMETER_HIJACKING",
+      "REFUSAL_SUPPRESSION",
+    ])
+    .optional()
+    .describe("Tipo de ataque si el escenario es de seguridad."),
+  system_prompt: z.string().min(1).max(50_000).describe("Las instrucciones base del System Prompt para el modelo local."),
+  user_messages: z.array(z.string().min(1).max(50_000)).min(1).max(100).describe("Secuencia de mensajes de usuario a evaluar."),
+};
+
+export type UpdateScenarioInput = CreateScenarioInput & { scenario_id: string };
+
+export async function updateTestScenario(args: UpdateScenarioInput): Promise<unknown> {
+  const body = {
+    name: args.name,
+    category: args.category,
+    attackType: args.attack_vector ?? null,
+    systemPrompt: args.system_prompt,
+    userMessages: args.user_messages,
+  };
+  const data = await slmarenaFetch<{ scenario: Scenario }>(`/api/scenarios/${encodeURIComponent(args.scenario_id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  return { scenario: data.scenario };
+}
+
+export const deleteScenarioInputSchema = {
+  scenario_id: z.string().min(1).describe("ID del escenario a eliminar."),
+};
+
+export type DeleteScenarioInput = { scenario_id: string };
+
+export async function deleteTestScenario(args: DeleteScenarioInput): Promise<unknown> {
+  await slmarenaFetch<null>(`/api/scenarios/${encodeURIComponent(args.scenario_id)}`, { method: "DELETE" });
+  return { deleted: true, scenario_id: args.scenario_id };
+}
+
 export const createScenarioInputSchema = {
   name: z.string().min(1).max(255).describe("Nombre descriptivo del escenario."),
   category: z.enum(["GENERAL", "SECURITY"]).default("GENERAL"),

@@ -1,8 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getArenaLeaderboard, leaderboardInputSchema } from "./leaderboard";
 import { getModelProfile, modelProfileInputSchema } from "./profile";
-import { createTestScenario, createScenarioInputSchema, listTestScenarios, listTestInputSchema } from "./scenarios";
-import { checkJobStatus, getTestRunDetails, jobStatusInputSchema, launchMatrixTest, launchMatrixInputSchema, runDetailsInputSchema } from "./runs";
+import { createTestScenario, createScenarioInputSchema, deleteScenarioInputSchema, deleteTestScenario, getScenarioInputSchema, getTestScenario, listTestScenarios, listTestInputSchema, updateScenarioInputSchema, updateTestScenario } from "./scenarios";
+import { checkJobStatus, getTestRunDetails, jobStatusInputSchema, launchMatrixTest, launchMatrixInputSchema, listRuns, listRunsInputSchema, pauseRun, resumeRun, cancelRun, resultDetailsInputSchema, getRunResultDetails, runControlInputSchema, runDetailsInputSchema } from "./runs";
+import { listOllamaModels } from "./ollama";
+import { getSettings, updateSettings, updateSettingsInputSchema } from "./settings";
+import { getScenarioAnalysis, analysisInputSchema, reviewResult, reviewResultInputSchema } from "./analysis";
 import { readLeaderboardResource, readScenariosResource } from "./resources";
 
 function jsonContent(payload: unknown) {
@@ -62,6 +65,22 @@ export function buildMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "list_ollama_models",
+    {
+      title: "Listar modelos de Ollama",
+      description:
+        "Consulta el servidor Ollama conectado a SLMarena: modelos instalados con su tamaño, modelos cargados en VRAM y el modelo activo actual.",
+    },
+    async () => {
+      try {
+        return jsonContent(await listOllamaModels());
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "list_test_scenarios",
     {
       title: "Listar escenarios de prueba",
@@ -71,6 +90,204 @@ export function buildMcpServer(): McpServer {
     async (args) => {
       try {
         return jsonContent(await listTestScenarios(args ?? {}));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_test_scenario",
+    {
+      title: "Obtener escenario de prueba",
+      description: "Devuelve el detalle completo de un escenario guardado por su ID: System Prompt, mensajes de usuario, categoría y tipo de ataque.",
+      inputSchema: getScenarioInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await getTestScenario(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_test_scenario",
+    {
+      title: "Editar escenario de prueba",
+      description:
+        "Sobrescribe un escenario existente: reemplaza nombre, categoría, tipo de ataque, System Prompt y mensajes de usuario del escenario indicado por scenario_id.",
+      inputSchema: updateScenarioInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await updateTestScenario(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_test_scenario",
+    {
+      title: "Eliminar escenario de prueba",
+      description: "Elimina permanentemente un escenario guardado por su ID.",
+      inputSchema: deleteScenarioInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await deleteTestScenario(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_runs",
+    {
+      title: "Listar ejecuciones",
+      description:
+        "Consulta el historial de ejecuciones con filtros opcionales: búsqueda libre, fecha, modelo, puntuación mínima, runs vulnerables y paginación. Sin filtros devuelve las ejecuciones recientes.",
+      inputSchema: listRunsInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await listRuns(args ?? {}));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "pause_run",
+    {
+      title: "Pausar ejecución",
+      description: "Pausa una ejecución en estado PENDING o RUNNING para detener el consumo de GPU.",
+      inputSchema: runControlInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await pauseRun(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "resume_run",
+    {
+      title: "Reanudar ejecución",
+      description: "Reanuda una ejecución pausada.",
+      inputSchema: runControlInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await resumeRun(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "cancel_run",
+    {
+      title: "Cancelar ejecución",
+      description: "Cancela una ejecución en estado PENDING o RUNNING.",
+      inputSchema: runControlInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await cancelRun(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_settings",
+    {
+      title: "Obtener configuración",
+      description:
+        "Devuelve la configuración actual de SLMarena: URL de Ollama, evaluador (sin exponer la API key), e hiperparámetros por defecto.",
+    },
+    async () => {
+      try {
+        return jsonContent(await getSettings());
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_settings",
+    {
+      title: "Actualizar configuración",
+      description:
+        "Actualiza la configuración de SLMarena: URL de Ollama, credenciales del evaluador o hiperparámetros por defecto. Solo se modifican los campos indicados.",
+      inputSchema: updateSettingsInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await updateSettings(args ?? {}));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_analysis",
+    {
+      title: "Obtener análisis agregado",
+      description:
+        "Agrega el rendimiento de un escenario a través de todos los modelos evaluados: muestras, estrellas promedio, ASR, por modelo.",
+      inputSchema: analysisInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await getScenarioAnalysis(args ?? {}));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "review_result",
+    {
+      title: "Revisar resultado",
+      description:
+        "Sobrescribe la evaluación automática del juez con una revisión humana (APPROVED/REJECTED/REVIEWED/UNREVIEWED) y notas del revisor.",
+      inputSchema: reviewResultInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await reviewResult(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_run_result_details",
+    {
+      title: "Obtener detalle de resultado individual",
+      description:
+        "Devuelve el detalle completo de un resultado individual de una ejecución: respuesta del modelo, turns, telemetría y evaluación del juez.",
+      inputSchema: resultDetailsInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await getRunResultDetails(args));
       } catch (error) {
         return errorResult(error);
       }

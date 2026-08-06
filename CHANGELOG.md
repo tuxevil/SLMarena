@@ -17,11 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (CONTRIBUTING, SECURITY, CODE_OF_CONDUCT), issue and PR templates,
   `.editorconfig`, and `.nvmrc`.
 - MCP server (`npm run mcp`, PRD v2.1): Streamable HTTP transport exposing the
-  SLMarena REST API as 7 tools (`get_arena_leaderboard`, `get_model_profile`,
-  `list_test_scenarios`, `get_test_run_details`, `create_test_scenario`,
-  `launch_matrix_test`, `check_job_status`) plus read-only resources
-  (`slmarena://leaderboard`, `slmarena://scenarios`) for agent-driven
-  benchmarking. Configured via `MCP_PORT` and `APP_URL`.
+  SLMarena REST API as 20 tools (`get_arena_leaderboard`, `list_ollama_models`,
+  `get_model_profile`, `list_test_scenarios`, `get_test_scenario`,
+  `create_test_scenario`, `update_test_scenario`, `delete_test_scenario`,
+  `list_runs`, `pause_run`, `resume_run`, `cancel_run`, `get_settings`,
+  `update_settings`, `get_analysis`, `review_result`, `get_run_result_details`,
+  `get_test_run_details`, `launch_matrix_test`, `check_job_status`) plus
+  read-only resources (`slmarena://leaderboard`, `slmarena://scenarios`) for
+  agent-driven benchmarking. Configured via `MCP_PORT` and `APP_URL`.
+- `GET /api/runs/:id/results/:resultId` endpoint for fetching a single model
+  result directly.
 
 ### Changed
 

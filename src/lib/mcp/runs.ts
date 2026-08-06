@@ -173,6 +173,81 @@ export async function launchMatrixTest(args: LaunchMatrixInput): Promise<unknown
   return { jobs };
 }
 
+export const listRunsInputSchema = {
+  keyword: z.string().max(200).optional().describe("Texto libre a buscar dentro de los runs (prompt, modelo, escenario, etc.)."),
+  date: z.string().optional().describe("Fecha en formato YYYY-MM-DD; devuelve solo runs creados ese día (huso local de quien consulta)."),
+  model: z.string().min(1).max(255).optional().describe("Nombre del modelo evaluado en el run (p.ej. qwen3:4b)."),
+  min_score: z.number().min(1).max(5).optional().describe("Solo runs con al menos un resultado con esa calificación de estrellas o mayor."),
+  vulnerable_only: z.boolean().optional().describe("Solo runs con al menos un resultado vulnerable (inyección o fuga del system prompt)."),
+  page: z.number().int().min(1).optional().describe("Número de página (default 1)."),
+  page_size: z.number().int().min(1).max(100).optional().describe("Runs por página (default 50, máx 100)."),
+};
+
+export type ListRunsInput = {
+  keyword?: string;
+  date?: string;
+  model?: string;
+  min_score?: number;
+  vulnerable_only?: boolean;
+  page?: number;
+  page_size?: number;
+};
+
+type RunsListPayload = { runs: TestRun[]; total: number; page: number; pageSize: number };
+
+export async function listRuns(args: ListRunsInput): Promise<unknown> {
+  const query = new URLSearchParams();
+  if (args.keyword) query.set("keyword", args.keyword);
+  if (args.date) query.set("date", args.date);
+  if (args.model) query.set("model", args.model);
+  if (args.min_score != null) query.set("score", String(args.min_score));
+  if (args.vulnerable_only) query.set("vulnerableOnly", "true");
+  if (args.page != null) query.set("page", String(args.page));
+  if (args.page_size != null) query.set("pageSize", String(args.page_size));
+
+  const data = await slmarenaFetch<RunsListPayload>(`/api/runs?${query.toString()}`);
+  return { runs: data.runs, total: data.total, page: data.page, pageSize: data.pageSize };
+}
+
+export const runControlInputSchema = {
+  run_id: z.string().min(1).describe("ID de la ejecución (UUID) a controlar."),
+};
+
+export type RunControlInput = { run_id: string };
+
+async function controlRun(runId: string, action: "pause" | "resume" | "cancel"): Promise<unknown> {
+  const data = await slmarenaFetch<RunPayload>(`/api/runs/${encodeURIComponent(runId)}/${action}`, {
+    method: "POST",
+  });
+  return { run: data.run };
+}
+
+export function pauseRun(args: RunControlInput): Promise<unknown> {
+  return controlRun(args.run_id, "pause");
+}
+
+export function resumeRun(args: RunControlInput): Promise<unknown> {
+  return controlRun(args.run_id, "resume");
+}
+
+export function cancelRun(args: RunControlInput): Promise<unknown> {
+  return controlRun(args.run_id, "cancel");
+}
+
+export const resultDetailsInputSchema = {
+  run_id: z.string().min(1).describe("ID de la ejecución (UUID) que contiene el resultado."),
+  result_id: z.string().min(1).describe("ID del resultado individual (model result) a inspeccionar."),
+};
+
+export type ResultDetailsInput = { run_id: string; result_id: string };
+
+export async function getRunResultDetails(args: ResultDetailsInput): Promise<unknown> {
+  const data = await slmarenaFetch<{ runId: string; result: unknown }>(
+    `/api/runs/${encodeURIComponent(args.run_id)}/results/${encodeURIComponent(args.result_id)}`,
+  );
+  return { run_id: data.runId, result: data.result };
+}
+
 export const jobStatusInputSchema = {
   job_id: z.string().min(1).describe("ID de la ejecución (run_id) devuelto por launch_matrix_test."),
 };

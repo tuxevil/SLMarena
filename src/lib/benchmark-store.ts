@@ -336,6 +336,10 @@ export const benchmarkStore = {
     return [...state.scenarios.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
+  getScenario(id: string) {
+    return state.scenarios.get(id) ?? null;
+  },
+
   async createScenario(input: Pick<Scenario, "name" | "category" | "attackType" | "systemPrompt" | "userMessages">) {
     const now = new Date().toISOString();
     const scenario: Scenario = {
