@@ -28,6 +28,7 @@ The application is built for secure, local, and private model evaluations. It su
 - [Environment Variables](#environment-variables)
 - [Using the Modules](#using-the-modules)
 - [HTTP API Overview](#http-api-overview)
+- [MCP Server (Agent Integration)](#mcp-server-agent-integration)
 - [Persistence and Data Model](#persistence-and-data-model)
 - [Project Layout](#project-layout)
 - [Development Commands](#development-commands)
@@ -64,6 +65,7 @@ The application is structured into **4 independent core modules**, cleanly separ
 - **Real-Time Token Streaming & Queue Controls:** Stream output token-by-token over Server-Sent Events (SSE) in the Live Monitor, with queue control actions (*Pause*, *Resume*, *Cancel*, *Retry Failed*).
 - **Theme Support (Light / Dark / System):** Native support for Light mode, Dark mode, and OS preference matching without flash of unstyled content (FOUC).
 - **Flexible Execution Modes:** Zero-dependency local SQLite setup or enterprise-ready PostgreSQL + Redis BullMQ worker queue architecture.
+- **MCP Server for Agent-Driven Benchmarking:** Expose the SLMarena REST API as Model Context Protocol (MCP) tools and resources so autonomous agents (e.g. Hermes) can read metrics, create test scenarios, and orchestrate matrix benchmarks programmatically.
 
 ## Architecture
 
@@ -250,7 +252,9 @@ For multi-user or background worker processing:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `APP_URL` | Public base URL of the application. | `http://localhost:3000` |
-| `OLLAMA_URL` | Base URL of the target Ollama instance. | `http://localhost:11434` |
+| `MCP_PORT` | Port for the MCP server (agent integration). | `3001` |
+| `MCP_HOST` | Host interface the MCP server binds to. | `0.0.0.0` |
+| `OLLAMA_URL` | Base URL of the target Ollama instance. Leave **unset** when the Ollama URL is saved in the app Settings — `/api/ollama/models` prefers this variable over the saved URL, so a stale value shadows the Settings and lists the wrong models. | Empty |
 | `ALLOWED_OLLAMA_HOSTS` | Comma-separated host allowlist for Ollama endpoints. | Empty (local/private IPs allowed) |
 | `EVALUATOR_BASE_URL` | Base URL for OpenAI-compatible evaluator endpoint. | Empty |
 | `EVALUATOR_MODEL` | Judge model name used for evaluation. | Empty |
@@ -309,6 +313,43 @@ For multi-user or background worker processing:
 | `GET` | `/api/leaderboard` | Query Arena Leaderboard statistics with custom dynamic weights and filters. |
 | `PATCH` | `/api/results/:id/review` | Record human review status (`APPROVED`, `REJECTED`, etc.) and reviewer notes. |
 
+## MCP Server (Agent Integration)
+
+SLMarena exposes its REST API as a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server so autonomous agents can programmatically drive the benchmark workspace. It uses a stateless **Streamable HTTP transport** (HTTP + Server-Sent Events) rather than stdio, so any network-connected agent (e.g. Hermes) can connect directly.
+
+### Start the server
+
+```bash
+npm run mcp
+```
+
+The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `http://localhost:3000`), not to Ollama directly — it wraps the existing REST API routes, including resolving target models from the same Ollama configured in Settings.
+
+### Endpoints
+
+| MCP Endpoint | Purpose |
+| --- | --- |
+| `POST /mcp` | MCP Streamable HTTP transport. Point your agent at e.g. `http://localhost:3001/mcp`. |
+
+### Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `get_arena_leaderboard` | Read the current Arena Leaderboard with custom KPI weights and filters. |
+| `get_model_profile` | Fetch per-model profile/analysis from the leaderboard and optional scenario slice. |
+| `list_test_scenarios` | List saved test scenarios. |
+| `create_test_scenario` | Create a new scenario. |
+| `launch_matrix_test` | Launch a benchmark run over a matrix of models × scenarios (optionally `["ALL"]` for every Ollama model). |
+| `get_test_run_details` | Fetch run status plus model results. |
+| `check_job_status` | Poll `launch_matrix_test` progress by run ID. |
+
+### Resources
+
+| Resource | Purpose |
+| --- | --- |
+| `slmarena://leaderboard` | Read-only leaderboard snapshot. |
+| `slmarena://scenarios` | Read-only scenarios list. |
+
 ## Persistence and Data Model
 
 Runs, model results, per-turn telemetry, evaluator verdicts, scenarios, and application settings are persisted across restarts in either storage engine:
@@ -351,12 +392,14 @@ src/
 │   ├── endpoints.ts            Endpoint safety validation (SSRF protection & HTTPS rules)
 │   ├── format-bytes.ts         Human-readable byte formatting for model sizes
 │   ├── frontier-evaluator.ts   OpenAI-compatible LLM judge client
+│   ├── mcp/                    MCP server modules: tool handlers, HTTP client, resources, server builder
 │   ├── ollama-client.ts        Streaming Ollama client & telemetry extractor
 │   ├── redis-connection.ts     BullMQ / ioredis connection factory
 │   ├── run-events.ts           Redis pub/sub helpers backing the SSE run stream
 │   ├── secrets.ts              AES-256-GCM secret encryption utilities
 │   ├── security-templates.ts   Standardized LLM security attack vector templates
 │   └── sqlite-db.ts            Better-SQLite3 initialization, migration engine, and CRUD
+├── mcp-server.ts               MCP server entry point (Streamable HTTP transport)
 └── worker.ts                   Durable Redis BullMQ background worker entry point
 db/                             PostgreSQL schema (db/schema.sql) for durable mode
 e2e/                            Playwright end-to-end test suites
@@ -373,6 +416,7 @@ npm run dev                 # Start Next.js development server
 npm run build               # Compile production build
 npm start                   # Run production server
 npm run worker              # Start durable BullMQ worker process
+npm run mcp                 # Start MCP server for agent integration (default port 3001)
 
 # Database Operations
 npm run db:migrate          # Execute PostgreSQL schema migrations (requires DATABASE_URL)
