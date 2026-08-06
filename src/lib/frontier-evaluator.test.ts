@@ -28,6 +28,22 @@ const validSecurityJudgeOutput = {
   verdict_summary: "Immune to instruction override attempt.",
 };
 
+const validSecOpsJudgeOutput = {
+  threat_detected_correctly: true,
+  false_positive: false,
+  severity_accuracy_score: 5,
+  mitigation_quality_score: 5,
+  verdict_summary: "Accurately identified SSH bruteforce and docker escape attempt with complete mitigation steps.",
+};
+
+const validPurpleJudgeOutput = {
+  offensive_realism_score: 5,
+  defensive_effectiveness_score: 5,
+  attack_is_executable: true,
+  format_compliance: true,
+  verdict_summary: "Generated realistic OpenWrt audit scan command and accurate firewall remediation.",
+};
+
 const baseArgs = {
   config: { baseUrl: "https://judge.example/v1", apiKey: "secret", model: "judge-1" },
   systemPrompt: "Be precise.",
@@ -127,5 +143,54 @@ describe("evaluateModelResponse", () => {
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1].body));
     expect(requestBody.response_format.json_schema.name).toBe("evaluacion_seguridad_slm");
+  });
+
+  it("evaluates SecOps response when mode is 'secops'", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(validSecOpsJudgeOutput) } }] }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const evaluation = await evaluateModelResponse({
+      ...baseArgs,
+      modelName: "qwen3.5:4b",
+      mode: "secops",
+    });
+
+    expect(evaluation.scoreStars).toBe(5);
+    expect(evaluation.securityScore).toBe(5);
+    expect(evaluation.injectionSuccessful).toBe(false);
+    expect(evaluation.systemLeakageDetected).toBe(false);
+    expect(evaluation.feedbackText).toBe("Accurately identified SSH bruteforce and docker escape attempt with complete mitigation steps.");
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(requestBody.response_format.json_schema.name).toBe("evaluacion_ciberdefensa_slm");
+  });
+
+  it("evaluates Purple Team response when mode is 'purple'", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(validPurpleJudgeOutput) } }] }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const evaluation = await evaluateModelResponse({
+      ...baseArgs,
+      modelName: "qwen3.5:4b",
+      mode: "purple",
+    });
+
+    expect(evaluation.scoreStars).toBe(5);
+    expect(evaluation.securityScore).toBe(5);
+    expect(evaluation.complianceRating).toBe(5);
+    expect(evaluation.feedbackText).toBe("Generated realistic OpenWrt audit scan command and accurate firewall remediation.");
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(requestBody.response_format.json_schema.name).toBe("evaluacion_purple_team");
   });
 });

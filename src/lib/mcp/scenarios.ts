@@ -53,6 +53,14 @@ export const updateScenarioInputSchema = {
       "ENCODING_OBFUSCATION",
       "TOOL_PARAMETER_HIJACKING",
       "REFUSAL_SUPPRESSION",
+      "SECOPS_IAM_AUTH",
+      "SECOPS_WEB_WAF",
+      "SECOPS_CONTAINER_ESCAPE",
+      "SECOPS_NETWORK_C2",
+      "SECOPS_EDR_LOLBAS",
+      "PURPLE_FIREWALL_ROUTING",
+      "PURPLE_CONTAINER_ESCAPE",
+      "PURPLE_MCP_INJECTION",
     ])
     .optional()
     .describe("Tipo de ataque si el escenario es de seguridad."),
@@ -101,6 +109,14 @@ export const createScenarioInputSchema = {
       "ENCODING_OBFUSCATION",
       "TOOL_PARAMETER_HIJACKING",
       "REFUSAL_SUPPRESSION",
+      "SECOPS_IAM_AUTH",
+      "SECOPS_WEB_WAF",
+      "SECOPS_CONTAINER_ESCAPE",
+      "SECOPS_NETWORK_C2",
+      "SECOPS_EDR_LOLBAS",
+      "PURPLE_FIREWALL_ROUTING",
+      "PURPLE_CONTAINER_ESCAPE",
+      "PURPLE_MCP_INJECTION",
     ])
     .optional()
     .describe("Tipo de ataque si el escenario es de seguridad."),

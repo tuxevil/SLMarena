@@ -112,9 +112,11 @@ SLMarena is built as a Next.js 16 application with a React 19 single-page dashbo
 
 SLMarena includes a security testing suite engineered to evaluate Small Language Models against adversarial jailbreak techniques and system prompt exfiltration attempts.
 
-### Built-in Attack Vectors
+### Built-in Attack Vectors & Specialized Security Categories
 
-The benchmark suite includes 8 pre-configured security attack types using a standardized system context containing canary tokens (`CANARY_SEC_9842_ALPHA`):
+The benchmark suite includes pre-configured security attack vectors and specialized SecOps/Purple Team operational templates:
+
+#### Adversarial Red Teaming Vectors (Canary Token Evaluation)
 
 | Attack Vector | Category Code | Objective |
 | --- | --- | --- |
@@ -126,6 +128,28 @@ The benchmark suite includes 8 pre-configured security attack types using a stan
 | **Encoding Obfuscation** | `ENCODING_OBFUSCATION` | Employs Base64 encoding, L33tspeak, or low-resource translation to bypass safety filters. |
 | **Instruction Override** | `INSTRUCTION_OVERRIDE` | Directly commands the model to ignore established system guidelines and safety constraints. |
 | **Indirect Prompt Injection** | `INDIRECT_PROMPT_INJECTION` | Embeds hidden malicious instructions inside untrusted third-party user data payloads (JSON/HTML). |
+
+#### Blue Team / SecOps Operations (L2 SOC Analyst Evaluation)
+
+Evaluates the model's ability to act as an L2 SOC Analyst using a dedicated SecOps frontier judge prompt and strict schema (`evaluacion_ciberdefensa_slm` evaluating `threat_detected_correctly`, `false_positive`, `severity_accuracy_score`, and `mitigation_quality_score`).
+
+| SecOps Scenario | Category Code | Domain & Target Objective |
+| --- | --- | --- |
+| **IAM & SSH Auth Audit** | `SECOPS_IAM_AUTH` | Detects SSH brute force success followed by `/usr/bin/docker run --privileged` privilege escalation in `auth.log`. |
+| **Web & WAF Log Analysis** | `SECOPS_WEB_WAF` | Evaluates Nginx HTTP access logs to differentiate automated scanners from successful web command injections. |
+| **Container & K8s Escape** | `SECOPS_CONTAINER_ESCAPE` | Audits Kubernetes Pod YAML for critical `--privileged` security context and `hostPath: /` volume mounts. |
+| **Network & DNS Tunneling C2** | `SECOPS_NETWORK_C2` | Identifies C2 DNS TXT query beaconing/tunnelling from Zeek/Bro logs and prescribes firewall/DNS containment. |
+| **EDR & Sysmon LoLBins** | `SECOPS_EDR_LOLBAS` | Analyzes Sysmon Event ID 1 for Living-off-the-Land binary exploitation (`certutil.exe -urlcache` stagers). |
+
+#### Purple Team Adversary Emulation (Dual Attack + Remediation Evaluation)
+
+Evaluates the model as a Purple Team Engineer required to output `[VECTOR_DE_ATAQUE]`, `[IMPACTO_DEMOSTRADO]`, and `[REMEDIACIÓN]` simultaneously, scored by a specialized Purple Team judge (`evaluacion_purple_team` evaluating `offensive_realism_score`, `defensive_effectiveness_score`, `attack_is_executable`, and `format_compliance`).
+
+| Purple Team Scenario | Category Code | Domain & Dual Objective |
+| --- | --- | --- |
+| **Firewall & Routing Audit** | `PURPLE_FIREWALL_ROUTING` | Generates WAN->LAN lateral movement audit scan commands and provides hardened OpenWrt DNAT rules. |
+| **Container Escape & Hardening** | `PURPLE_CONTAINER_ESCAPE` | Writes a bash host-mount container escape script and provides secure LXC `.conf` cgroup/device parameters. |
+| **MCP / API Command Injection** | `PURPLE_MCP_INJECTION` | Crafts an offensive JSON payload targeting string-interpolated OpenSSL CLI calls in MCP backends and writes defensive input sanitization code. |
 
 ## Arena Leaderboard & Analytics
 

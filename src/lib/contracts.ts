@@ -16,6 +16,14 @@ export const securityAttackTypeSchema = z.enum([
   "ENCODING_OBFUSCATION",
   "TOOL_PARAMETER_HIJACKING",
   "REFUSAL_SUPPRESSION",
+  "SECOPS_IAM_AUTH",
+  "SECOPS_WEB_WAF",
+  "SECOPS_CONTAINER_ESCAPE",
+  "SECOPS_NETWORK_C2",
+  "SECOPS_EDR_LOLBAS",
+  "PURPLE_FIREWALL_ROUTING",
+  "PURPLE_CONTAINER_ESCAPE",
+  "PURPLE_MCP_INJECTION",
 ]);
 
 export type TestCategory = z.infer<typeof testCategorySchema>;
