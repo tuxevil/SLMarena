@@ -451,7 +451,9 @@ function emit(run: StoredRun, type: string) {
   };
 
   const config: RunPersistenceConfig = { ollamaUrl: run.ollamaUrl, evaluator: run.evaluator };
-  queuePersistedRun(event.run, type, config);
+  if (type !== "model.token") {
+    queuePersistedRun(snapshot(run, { includeRawJson: true }), type, config);
+  }
   void publishRunEvent(event).catch((error) => console.error("[slmarena] run event publish failed", error));
   for (const listener of run.listeners) listener(event);
 }
@@ -468,7 +470,12 @@ function restoreRun(run: TestRun, config: RunPersistenceConfig) {
   });
 }
 
-function snapshot(run: StoredRun): TestRun {
+function snapshot(run: StoredRun, options: { includeRawJson?: boolean } = {}): TestRun {
+  const clientResults = run.results.map((result) =>
+    options.includeRawJson || !result.evaluation
+      ? result
+      : { ...result, evaluation: { ...result.evaluation, rawJson: null } },
+  );
   return structuredClone({
     id: run.id,
     category: run.category ?? "GENERAL",
@@ -483,7 +490,7 @@ function snapshot(run: StoredRun): TestRun {
     models: run.models,
     parameters: run.parameters,
     evaluatorModel: run.evaluatorModel,
-    results: run.results,
+    results: clientResults,
     createdAt: run.createdAt,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,

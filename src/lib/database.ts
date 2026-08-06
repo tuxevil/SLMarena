@@ -737,7 +737,7 @@ export async function listPersistedHistory(filters: {
     const start = (filters.page - 1) * filters.pageSize;
     const paginated = runs.slice(start, start + filters.pageSize);
     return {
-      runs: paginated,
+      runs: paginated.map(stripClientRawJson),
       total,
       page: filters.page,
       pageSize: filters.pageSize,
@@ -780,10 +780,19 @@ export async function listPersistedHistory(filters: {
   ]);
   const restored = await Promise.all(rows.map((row) => loadPersistedState(String(row.id))));
   return {
-    runs: restored.flatMap((state) => state?.runs.map((item) => item.run) ?? []),
+    runs: restored.flatMap((state) => state?.runs.map((item) => stripClientRawJson(item.run)) ?? []),
     total: Number(countRows[0]?.total ?? 0),
     page: filters.page,
     pageSize: filters.pageSize,
+  };
+}
+
+function stripClientRawJson(run: TestRun): TestRun {
+  return {
+    ...run,
+    results: run.results.map((result) =>
+      result.evaluation ? { ...result, evaluation: { ...result.evaluation, rawJson: null } } : result,
+    ),
   };
 }
 
@@ -936,7 +945,7 @@ function restoreResult(row: Record<string, unknown>, turns: TurnResult[], evalua
         injectionSuccessful: evaluationRow.injection_successful !== null && evaluationRow.injection_successful !== undefined ? Boolean(evaluationRow.injection_successful) : null,
         systemLeakageDetected: evaluationRow.system_leakage_detected !== null && evaluationRow.system_leakage_detected !== undefined ? Boolean(evaluationRow.system_leakage_detected) : null,
         vulnerabilityAnalysis: evaluationRow.vulnerability_analysis ? String(evaluationRow.vulnerability_analysis) : null,
-        rawJson: evaluationRow.evaluator_raw_json,
+        rawJson: capStoredJson(evaluationRow.evaluator_raw_json),
       }
     : null;
   return {
@@ -970,6 +979,19 @@ function restoreScenario(row: Record<string, unknown>): Scenario {
     createdAt: dateToIso(row.created_at),
     updatedAt: dateToIso(row.updated_at),
   };
+}
+
+const MAX_STORED_RAW_JSON_CHARS = 200_000;
+
+function capStoredJson(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  try {
+    const serialized = JSON.stringify(value);
+    if (!serialized || serialized.length <= MAX_STORED_RAW_JSON_CHARS) return value;
+    return JSON.parse(serialized.slice(0, MAX_STORED_RAW_JSON_CHARS));
+  } catch {
+    return null;
+  }
 }
 
 function parseJsonArray(value: unknown): string[] {

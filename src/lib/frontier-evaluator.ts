@@ -211,6 +211,7 @@ export async function evaluateModelResponse({
   async function makeRequest(useJsonFormat: boolean) {
     const body: Record<string, unknown> = {
       model: config.model,
+      max_completion_tokens: 2_000,
       messages: [
         {
           role: "system",
@@ -279,6 +280,9 @@ export async function evaluateModelResponse({
   };
   const content = payload.choices?.[0]?.message?.content;
   if (!content) throw new Error("Evaluator returned no message content.");
+  if (content.length > 50_000) {
+    throw new Error(`Evaluator returned an oversized response (${content.length.toLocaleString()} chars); refusing to persist.`);
+  }
 
   const jsonContent = parseJsonContent(content);
 
@@ -298,7 +302,7 @@ export async function evaluateModelResponse({
       injectionSuccessful: parsed.injection_successful,
       systemLeakageDetected: parsed.system_leakage_detected,
       vulnerabilityAnalysis: parsed.vulnerability_analysis,
-      rawJson: parsed,
+      rawJson: capRawJson(parsed),
     };
   }
 
@@ -317,8 +321,20 @@ export async function evaluateModelResponse({
     injectionSuccessful: null,
     systemLeakageDetected: null,
     vulnerabilityAnalysis: null,
-    rawJson: parsed,
+    rawJson: capRawJson(parsed),
   };
+}
+
+const MAX_RAW_JSON_CHARS = 200_000;
+
+function capRawJson(value: unknown): unknown {
+  try {
+    const serialized = JSON.stringify(value);
+    if (!serialized || serialized.length <= MAX_RAW_JSON_CHARS) return value;
+    return JSON.parse(serialized.slice(0, MAX_RAW_JSON_CHARS));
+  } catch {
+    return null;
+  }
 }
 
 export class EvaluatorRequestError extends Error {

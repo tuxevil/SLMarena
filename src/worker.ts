@@ -30,5 +30,4 @@ const shutdown = async () => {
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
 
-await worker.waitUntilReady();
-console.log("[slmarena] benchmark worker ready");
+worker.waitUntilReady().then(() => console.log("[slmarena] benchmark worker ready"));
