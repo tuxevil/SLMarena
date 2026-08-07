@@ -73,6 +73,17 @@ test.beforeEach(async ({ page }) => {
     activeEvaluatorId: null,
   };
   await page.route(/\/api\/settings/, async (route) => {
+    if (route.request().method() === "POST" && route.request().url().endsWith("/evaluators")) {
+      const evaluator = {
+        id: "ev-1",
+        label: "judge",
+        baseUrl: "https://judge.example/v1",
+        model: "judge",
+        apiKeyConfigured: true,
+      };
+      await route.fulfill({ json: { settings: { ...settingsStub, evaluators: [evaluator] }, evaluator } });
+      return;
+    }
     if (route.request().method() === "PATCH") {
       await route.fulfill({ json: { settings: settingsStub } });
       return;
@@ -188,10 +199,16 @@ test("saves global settings in settings page", async ({ page }) => {
   await page.getByPlaceholder("https://api.openai.com/v1").fill("https://judge.example/v1");
   await page.getByPlaceholder("gpt-4o-mini, openrouter/auto...").fill("judge");
   await page.getByPlaceholder("sk-...").fill("sk-test-123");
-  await page.getByRole("button", { name: "💾 Save Settings" }).click();
+  await page.getByRole("button", { name: "＋ Add Evaluator" }).click();
 
   // Key is stored and no longer editable as plain text
+  await expect(page.getByText("✓ API key configured")).toBeVisible();
+  await page.getByRole("button", { name: "✏️ Edit" }).click();
   await expect(page.getByPlaceholder("•••••••••••••••• (Configured)")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await page.getByRole("button", { name: "💾 Save Settings" }).click();
+  await expect(page.getByText("✅ Settings saved successfully.")).toBeVisible();
 });
 
 function createRun(status: string, resultPatch: Record<string, unknown> = {}) {
