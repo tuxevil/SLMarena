@@ -66,8 +66,6 @@ export default function HomePage() {
       <LinkedAnalytics models={linkedModels} />
       <ExportSection snapshot={data} />
       <footer className="site-footer">
-        SLMarena · static snapshot {data.generated_at} · judge{" "}
-        {data.global_stats.default_evaluator_model} ·{" "}
         <a
           className="footer-link"
           href="https://github.com/tuxevil/SLMarena"
