@@ -247,7 +247,9 @@ Already-run benchmark responses (persisted `model_results.response_text`) can be
 - **Via API:** `POST /api/results/:id/reevaluate` and `POST /api/runs/:id/reevaluate` with an optional `{ "evaluatorId": "..." }` body (defaults to the active evaluator).
 - **Via MCP:** the `re_evaluate_result` tool.
 
-Re-evaluation replaces the **current verdict** (so leaderboard and analysis reflect the new judge) while appending every prior verdict to the **`evaluation_history`** table, visible as *Evaluation History* in the inspector. A failed judge call leaves the existing verdict untouched.
+Re-evaluation replaces the **current verdict** (so leaderboard and analysis reflect the new judge) while appending every prior verdict to the **`evaluation_history`** table, visible as *Evaluation History* in the inspector. A failed judge call leaves the existing verdict untouched and marks the result as `FAILED` with a descriptive `errorMessage`.
+
+**Judge fallback for providers without `response_format` support:** if the evaluator endpoint rejects `response_format: json_schema` with HTTP 400 (e.g. OpenCode Go/Zen), the client retries without it; if the judge then returns truncated JSON missing required fields, it retries up to two more times with a **condensed system prompt that explicitly lists the required fields** (and a reinforcement message on the last attempt). Only if every attempt fails does the call error out, with the fields the judge omitted in the message.
 
 ## Durable PostgreSQL and Redis Setup
 

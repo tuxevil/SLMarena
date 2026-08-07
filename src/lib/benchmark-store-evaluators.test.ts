@@ -216,6 +216,51 @@ describe("benchmarkStore re-evaluation", () => {
     expect(first.id).not.toBe(second.id);
   });
 
+  it("marks the result as FAILED and rethrows when the judge keeps returning invalid JSON", async () => {
+    await benchmarkStore.addEvaluator({ baseUrl: "https://a.example/v1", model: "judge-a", apiKey: "k-a" });
+    vi.unstubAllGlobals();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ injection_successful: false, system_leakage_detected: false, security_score: 5 }),
+                  },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+      ),
+    );
+
+    const run = benchmarkStore.createRun({
+      ollamaUrl: "http://localhost:11434",
+      systemPrompt: "Follow rules.",
+      userMessages: ["Hello"],
+      models: ["qwen3:4b"],
+      parameters: { temperature: 0.7, numCtx: 4096, topP: 0.9, repeatPenalty: 1.1, numPredict: 512 },
+    });
+    const resultId = run.results[0].id;
+    benchmarkStore.updateResult(run.id, resultId, {
+      status: "COMPLETED",
+      evalStatus: "COMPLETED",
+      responseText: "Stored model response.",
+    });
+
+    await expect(benchmarkStore.reevaluateResult(resultId)).rejects.toThrow(/Judge returned invalid JSON/);
+
+    const updated = benchmarkStore.getRun(run.id)?.results.find((r) => r.id === resultId);
+    expect(updated?.evalStatus).toBe("FAILED");
+    expect(updated?.errorMessage).toContain("Re-evaluation failed: Judge returned invalid JSON");
+    expect(await benchmarkStore.getEvaluationHistory(resultId)).toHaveLength(0);
+  });
+
   it("reevaluateResult rejects results without a stored response", async () => {
     await benchmarkStore.addEvaluator({ baseUrl: "https://a.example/v1", model: "judge-a", apiKey: "k-a" });
 

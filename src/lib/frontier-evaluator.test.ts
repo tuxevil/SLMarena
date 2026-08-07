@@ -28,6 +28,12 @@ const validSecurityJudgeOutput = {
   verdict_summary: "Immune to instruction override attempt.",
 };
 
+const truncatedSecurityJudgeOutput = {
+  injection_successful: false,
+  system_leakage_detected: false,
+  security_score: 5,
+};
+
 const validSecOpsJudgeOutput = {
   threat_detected_correctly: true,
   false_positive: false,
@@ -87,15 +93,16 @@ describe("evaluateModelResponse", () => {
     expect(requestBody.messages[1].content).toContain("### RESPUESTA_MODELO_LOCAL (Modelo: qwen3.5:4b)");
   });
 
-  it("rejects judge output that does not match the schema", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ choices: [{ message: { content: "not json" } }] }), { status: 200 }),
-      ),
+  it("rejects judge output that does not match the schema after all retries", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: "not json" } }] }), { status: 200 })),
     );
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(evaluateModelResponse({ ...baseArgs, modelName: "qwen3.5:4b" })).rejects.toThrow();
+    await expect(evaluateModelResponse({ ...baseArgs, modelName: "qwen3.5:4b" })).rejects.toThrow(
+      /Judge returned invalid JSON after 3 attempts/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("retries without response_format on HTTP 400 and includes error details if failed", async () => {
@@ -116,6 +123,60 @@ describe("evaluateModelResponse", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const fallbackBody = JSON.parse(String(fetchMock.mock.calls[1][1].body));
     expect(fallbackBody.response_format).toBeUndefined();
+  });
+
+  it("recovers from truncated fallback JSON using the condensed judge prompt", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("This response_format type is unavailable now", { status: 400 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(truncatedSecurityJudgeOutput) } }] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(validSecurityJudgeOutput) } }] }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const evaluation = await evaluateModelResponse({
+      ...baseArgs,
+      modelName: "qwen3.5:4b",
+      mode: "security",
+    });
+
+    expect(evaluation.scoreStars).toBe(5);
+    expect(evaluation.injectionSuccessful).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const fallbackBody = JSON.parse(String(fetchMock.mock.calls[1][1].body));
+    expect(fallbackBody.response_format).toBeUndefined();
+    expect(fallbackBody.messages[0].content).toContain("security auditor");
+
+    const condensedBody = JSON.parse(String(fetchMock.mock.calls[2][1].body));
+    expect(condensedBody.response_format).toBeUndefined();
+    expect(condensedBody.messages[0].content).toContain("strict JSON judge");
+    expect(condensedBody.messages[0].content).toContain("vulnerability_analysis");
+    expect(condensedBody.messages).toHaveLength(2);
+  });
+
+  it("throws a clear error when fallback retries keep returning truncated JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(truncatedSecurityJudgeOutput) } }] }), {
+            status: 200,
+          }),
+        ),
+      ),
+    );
+
+    await expect(
+      evaluateModelResponse({ ...baseArgs, modelName: "qwen3.5:4b", mode: "security" }),
+    ).rejects.toThrow(/Judge returned invalid JSON after 3 attempts/);
   });
 
   it("evaluates security response when mode is 'security'", async () => {

@@ -186,23 +186,33 @@ export const benchmarkStore = {
 
     const currentRun = benchmarkStore.getStoredRun(runId);
     const currentResult = currentRun?.results.find((item) => item.id === resultId);
-    const evaluation = await retryTransient(
-      () =>
-        evaluateModelResponse({
-          config,
-          systemPrompt: currentRun?.systemPrompt ?? run.systemPrompt,
-          userMessages: currentRun?.userMessages ?? run.userMessages,
-          responseText: currentResult?.responseText ?? result.responseText ?? "",
-          modelName: result.modelName,
-          signal: AbortSignal.timeout(300_000),
-          mode: resolveEvaluationMode(currentRun?.category ?? run.category, currentRun?.attackType ?? run.attackType),
-        }),
-      AbortSignal.timeout(300_000),
-    );
+    try {
+      const evaluation = await retryTransient(
+        () =>
+          evaluateModelResponse({
+            config,
+            systemPrompt: currentRun?.systemPrompt ?? run.systemPrompt,
+            userMessages: currentRun?.userMessages ?? run.userMessages,
+            responseText: currentResult?.responseText ?? result.responseText ?? "",
+            modelName: result.modelName,
+            signal: AbortSignal.timeout(300_000),
+            mode: resolveEvaluationMode(currentRun?.category ?? run.category, currentRun?.attackType ?? run.attackType),
+          }),
+        AbortSignal.timeout(300_000),
+      );
 
-    benchmarkStore.setEvaluation(runId, resultId, evaluation);
-    benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED" });
-    await appendEvaluationHistory(resultId, evaluation, evaluatorId ?? null);
+      benchmarkStore.setEvaluation(runId, resultId, evaluation);
+      benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED" });
+      await appendEvaluationHistory(resultId, evaluation, evaluatorId ?? null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[slmarena] [Re-evaluate Failed]", { resultId, error: message });
+      benchmarkStore.updateResult(runId, resultId, {
+        evalStatus: "FAILED",
+        errorMessage: `Re-evaluation failed: ${message}`,
+      });
+      throw error;
+    }
   },
 
   async reevaluateRun(runId: string, evaluatorId?: string | null): Promise<TestRun> {
