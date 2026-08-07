@@ -6,12 +6,15 @@
 [![TypeScript](https://img.shields.io/badge/types-TypeScript-3178c6.svg)](tsconfig.json)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black.svg)](package.json)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](package.json)
+[![Live](https://img.shields.io/badge/live-slmarena.tuxevil.com-4caf50.svg)](https://slmarena.tuxevil.com/)
 
 SLMarena (Small Language Model Arena) is an enterprise-grade local language-model benchmarking, security evaluation, and quality telemetry workspace. It positions the **Small Language Model (SLM)** as a first-class entity and applies universal UX/UI patterns—*Progressive Disclosure*, *Master-Detail Navigation*, and *Contextual Analytics*—making model comparison intuitive for both AI engineers and non-technical stakeholders.
 
 SLMarena executes standardized scenarios across local Ollama models, captures response-quality metrics and granular inference telemetry, evaluates model outputs via an OpenAI-compatible frontier judge model, and compiles rankings on an interactive Arena Leaderboard.
 
 The application is built for secure, local, and private model evaluations. It supports both a zero-config single-process development mode backed by SQLite and a scalable, durable multi-process deployment backed by PostgreSQL and Redis.
+
+> 🌐 **Public Leaderboard:** [https://slmarena.tuxevil.com/](https://slmarena.tuxevil.com/) — static snapshot showcase of evaluated models, security results, and public scenarios.
 
 ## Contents
 
