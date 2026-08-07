@@ -1,0 +1,19 @@
+# Docker build context — exclude heavy / regenerated paths
+node_modules
+**/node_modules
+.next
+**/.next
+landing/out
+.git
+*.db
+*.db-shm
+*.db-wal
+*.heapsnapshot
+test-results
+playwright-report
+coverage
+.beads
+.dolt
+.env
+.env.local
+.env.*.local

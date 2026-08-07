@@ -23,6 +23,9 @@
   "engines": {
     "node": ">=20"
   },
+  "workspaces": [
+    "landing"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -35,7 +38,10 @@
     "test:e2e:dev": "PLAYWRIGHT_DEV=1 playwright test",
     "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/schema.sql",
     "worker": "tsx src/worker.ts",
-    "mcp": "tsx src/mcp-server.ts"
+    "mcp": "tsx src/mcp-server.ts",
+    "landing:export": "tsx scripts/export-public-snapshot.ts",
+    "landing:build": "npm run landing:export && npm run --prefix landing build",
+    "landing:dev": "npm run --prefix landing dev"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

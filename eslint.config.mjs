@@ -5,4 +5,13 @@ import nextTypescript from "eslint-config-next/typescript";
 // active config to avoid circular plugin objects under ESLint 9.
 const nextConfig = [...nextCoreWebVitals, ...nextTypescript];
 
-export default nextConfig;
+// The landing app is an isolated static-export workspace with its own
+// toolchain; linting it with the root config would require duplicated deps.
+const config = [
+  ...nextConfig,
+  {
+    ignores: ["landing/**"],
+  },
+];
+
+export default config;
