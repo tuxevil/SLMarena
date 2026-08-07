@@ -18,5 +18,6 @@ RUN npm run --prefix landing build
 
 # --- Stage 2: serve statically via nginx ---
 FROM nginx:1.27-alpine
+EXPOSE 80
 COPY landing/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /repo/landing/out /usr/share/nginx/html
