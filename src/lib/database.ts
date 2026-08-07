@@ -2,6 +2,7 @@ import postgres, { type TransactionSql } from "postgres";
 import { createHash } from "node:crypto";
 import type {
   EvaluatorConfig,
+  EvaluatorEntry,
   AppSettings,
   ModelResult,
   Scenario,
@@ -15,14 +16,19 @@ import type {
 } from "@/lib/contracts";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 import {
+  sqliteDeleteEvaluator,
   sqliteDeleteResult,
   sqliteDeleteScenario,
+  sqliteListEvaluators,
+  sqliteLoadEvaluatorKey,
   sqliteLoadSettings,
   sqliteLoadState,
   sqlitePersistHumanReview,
   sqlitePersistRun,
   sqlitePersistScenario,
   sqlitePersistSettings,
+  sqliteSetActiveEvaluator,
+  sqliteUpsertEvaluator,
 } from "@/lib/sqlite-db";
 
 export type RunPersistenceConfig = {
@@ -30,8 +36,12 @@ export type RunPersistenceConfig = {
   evaluator?: EvaluatorConfig;
 };
 
-export type PersistedSettings = AppSettings & {
+export type PersistedSettings = {
+  ollamaUrl: string;
+  evaluators: EvaluatorEntry[];
+  activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
+  parameters: AppSettings["parameters"];
 };
 
 type PersistedRun = {
@@ -579,30 +589,110 @@ export async function loadPersistedSettings(): Promise<PersistedSettings | null>
     return sqliteLoadSettings();
   }
   const rows = await getClient()!`
-    SELECT ollama_url, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, parameters_json
+    SELECT ollama_url, active_evaluator_id, parameters_json
     FROM app_settings
     WHERE id = 1
   `;
   const row = rows[0];
   if (!row) return null;
-  const encrypted = row.evaluator_api_key_encrypted ? String(row.evaluator_api_key_encrypted) : null;
-  let apiKey: string | null = null;
-  if (encrypted) {
-    try {
-      apiKey = decryptSecret(encrypted);
-    } catch (error) {
-      console.error("[slmarena] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
-    }
-  }
+  const evaluators = await listPersistedEvaluators();
+  const activeEvaluatorId = row.active_evaluator_id ? String(row.active_evaluator_id) : null;
+  const active = evaluators.find((evaluator) => evaluator.id === activeEvaluatorId) ?? null;
   const params = parsePersistedParameters(row.parameters_json);
   return {
     ollamaUrl: String(row.ollama_url),
-    evaluatorBaseUrl: String(row.evaluator_base_url ?? ""),
-    evaluatorModel: String(row.evaluator_model ?? ""),
-    evaluatorApiKeyConfigured: Boolean(encrypted),
-    evaluatorApiKey: apiKey,
+    evaluators,
+    activeEvaluatorId,
+    evaluatorApiKey: active ? await loadPersistedEvaluatorKey(active.id) : null,
     parameters: params,
   };
+}
+
+export async function listPersistedEvaluators(): Promise<EvaluatorEntry[]> {
+  if (!isPostgres()) {
+    return sqliteListEvaluators();
+  }
+  const rows = await getClient()!`
+    SELECT id, label, base_url, model, api_key_encrypted
+    FROM evaluators
+    ORDER BY created_at ASC, id ASC
+  `;
+  return rows.map((row) => ({
+    id: String(row.id),
+    label: String(row.label),
+    baseUrl: String(row.base_url),
+    model: String(row.model),
+    apiKeyConfigured: Boolean(row.api_key_encrypted),
+  }));
+}
+
+export async function upsertPersistedEvaluator(input: {
+  id?: string;
+  label?: string;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  clearKey?: boolean;
+}): Promise<EvaluatorEntry> {
+  if (!isPostgres()) {
+    return sqliteUpsertEvaluator(input);
+  }
+  const sql = getClient()!;
+  const id = input.id ?? crypto.randomUUID();
+  const [existing] = await sql`SELECT api_key_encrypted FROM evaluators WHERE id = ${id}`;
+  let encrypted: string | null = null;
+  if (input.apiKey) {
+    encrypted = encryptSecret(input.apiKey);
+  } else if (!input.clearKey && existing?.api_key_encrypted) {
+    encrypted = String(existing.api_key_encrypted);
+  }
+  const label = input.label?.trim() || input.model;
+  await sql`
+    INSERT INTO evaluators (id, label, base_url, model, api_key_encrypted, created_at, updated_at)
+    VALUES (${id}, ${label}, ${input.baseUrl}, ${input.model}, ${encrypted}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT (id) DO UPDATE SET
+      label = EXCLUDED.label,
+      base_url = EXCLUDED.base_url,
+      model = EXCLUDED.model,
+      api_key_encrypted = EXCLUDED.api_key_encrypted,
+      updated_at = CURRENT_TIMESTAMP
+  `;
+  return { id, label, baseUrl: input.baseUrl, model: input.model, apiKeyConfigured: Boolean(encrypted) };
+}
+
+export async function deletePersistedEvaluator(id: string): Promise<boolean> {
+  if (!isPostgres()) {
+    return sqliteDeleteEvaluator(id);
+  }
+  const [deleted] = await getClient()!`DELETE FROM evaluators WHERE id = ${id} RETURNING id`;
+  return Boolean(deleted);
+}
+
+export async function loadPersistedEvaluatorKey(id: string): Promise<string | null> {
+  if (!isPostgres()) {
+    return sqliteLoadEvaluatorKey(id);
+  }
+  const rows = await getClient()!`SELECT api_key_encrypted FROM evaluators WHERE id = ${id}`;
+  const encrypted = rows[0]?.api_key_encrypted ? String(rows[0].api_key_encrypted) : null;
+  if (!encrypted) return null;
+  try {
+    return decryptSecret(encrypted);
+  } catch (error) {
+    console.error("[slmarena] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+export async function setPersistedActiveEvaluator(id: string | null) {
+  if (!isPostgres()) {
+    sqliteSetActiveEvaluator(id);
+    return;
+  }
+  await getClient()!`
+    UPDATE app_settings
+    SET active_evaluator_id = ${id}, updated_at = CURRENT_TIMESTAMP
+    WHERE id = 1
+  `;
 }
 
 function parsePersistedParameters(raw: unknown): import("@/lib/contracts").BenchmarkParameters {
@@ -624,8 +714,8 @@ function parsePersistedParameters(raw: unknown): import("@/lib/contracts").Bench
 
 export async function persistSettings(settings: {
   ollamaUrl: string;
-  evaluatorBaseUrl: string;
-  evaluatorModel: string;
+  evaluators: EvaluatorEntry[];
+  activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
   parameters: import("@/lib/contracts").BenchmarkParameters;
 }) {
@@ -633,15 +723,17 @@ export async function persistSettings(settings: {
     sqlitePersistSettings(settings);
     return;
   }
+  const active = settings.evaluators.find((evaluator) => evaluator.id === settings.activeEvaluatorId) ?? null;
   const encrypted = settings.evaluatorApiKey ? encryptSecret(settings.evaluatorApiKey) : null;
   await getClient()!`
-    INSERT INTO app_settings (id, ollama_url, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, parameters_json, updated_at)
-    VALUES (1, ${settings.ollamaUrl}, ${settings.evaluatorBaseUrl || null}, ${settings.evaluatorModel || null}, ${encrypted}, ${JSON.stringify(settings.parameters)}::jsonb, CURRENT_TIMESTAMP)
+    INSERT INTO app_settings (id, ollama_url, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, active_evaluator_id, parameters_json, updated_at)
+    VALUES (1, ${settings.ollamaUrl}, ${active?.baseUrl ?? null}, ${active?.model ?? null}, ${encrypted}, ${settings.activeEvaluatorId ?? null}, ${JSON.stringify(settings.parameters)}::jsonb, CURRENT_TIMESTAMP)
     ON CONFLICT (id) DO UPDATE SET
       ollama_url = EXCLUDED.ollama_url,
       evaluator_base_url = EXCLUDED.evaluator_base_url,
       evaluator_model = EXCLUDED.evaluator_model,
       evaluator_api_key_encrypted = EXCLUDED.evaluator_api_key_encrypted,
+      active_evaluator_id = EXCLUDED.active_evaluator_id,
       parameters_json = EXCLUDED.parameters_json,
       updated_at = EXCLUDED.updated_at
   `;

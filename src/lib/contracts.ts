@@ -43,6 +43,31 @@ export const evaluatorConfigSchema = z.object({
   model: z.string().trim().min(1).max(255),
 });
 
+export const evaluatorUpsertSchema = z.object({
+  label: z.string().trim().max(255).optional(),
+  baseUrl: httpUrlSchema.refine((value) => !validateEvaluatorEndpoint(value), "Evaluator endpoint must use HTTPS unless local."),
+  model: z.string().trim().min(1).max(255),
+  apiKey: z.string().max(4_096).optional(),
+  makeActive: z.boolean().optional(),
+});
+
+export type EvaluatorUpsertInput = z.infer<typeof evaluatorUpsertSchema>;
+
+export const evaluatorUpdateSchema = evaluatorUpsertSchema
+  .omit({ makeActive: true })
+  .partial()
+  .extend({ makeActive: z.boolean().optional() });
+
+export type EvaluatorUpdateInput = z.infer<typeof evaluatorUpdateSchema>;
+
+export type EvaluatorEntry = {
+  id: string;
+  label: string;
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+};
+
 export const createRunSchema = z
   .object({
     ollamaUrl: httpUrlSchema,
@@ -88,6 +113,7 @@ export const settingsUpdateSchema = z.object({
     .nullish()
     .transform((value) => value ?? undefined),
   clearEvaluatorApiKey: z.boolean().default(false),
+  activeEvaluatorId: z.string().max(255).nullable().optional(),
   parameters: benchmarkParametersSchema.optional(),
 });
 
@@ -174,6 +200,8 @@ export type AppSettings = {
   evaluatorBaseUrl: string;
   evaluatorModel: string;
   evaluatorApiKeyConfigured: boolean;
+  evaluators: EvaluatorEntry[];
+  activeEvaluatorId: string | null;
   parameters: BenchmarkParameters;
 };
 

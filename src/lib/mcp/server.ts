@@ -4,7 +4,7 @@ import { getModelProfile, modelProfileInputSchema } from "./profile";
 import { createTestScenario, createScenarioInputSchema, deleteScenarioInputSchema, deleteTestScenario, getScenarioInputSchema, getTestScenario, listTestScenarios, listTestInputSchema, updateScenarioInputSchema, updateTestScenario } from "./scenarios";
 import { checkJobStatus, getTestRunDetails, jobStatusInputSchema, launchMatrixTest, launchMatrixInputSchema, listRuns, listRunsInputSchema, pauseRun, resumeRun, cancelRun, resultDetailsInputSchema, getRunResultDetails, runControlInputSchema, runDetailsInputSchema } from "./runs";
 import { listOllamaModels } from "./ollama";
-import { getSettings, updateSettings, updateSettingsInputSchema } from "./settings";
+import { getSettings, updateSettings, updateSettingsInputSchema, addEvaluator, addEvaluatorInputSchema, updateEvaluator, updateEvaluatorInputSchema, deleteEvaluator, deleteEvaluatorInputSchema } from "./settings";
 import { getScenarioAnalysis, analysisInputSchema, reviewResult, reviewResultInputSchema } from "./analysis";
 import { readLeaderboardResource, readScenariosResource } from "./resources";
 
@@ -215,7 +215,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Obtener configuración",
       description:
-        "Devuelve la configuración actual de SLMarena: URL de Ollama, evaluador (sin exponer la API key), e hiperparámetros por defecto.",
+        "Devuelve la configuración actual de SLMarena: URL de Ollama, catálogo de modelos evaluadores con el activo seleccionado (sin exponer API keys), e hiperparámetros por defecto.",
     },
     async () => {
       try {
@@ -231,12 +231,63 @@ export function buildMcpServer(): McpServer {
     {
       title: "Actualizar configuración",
       description:
-        "Actualiza la configuración de SLMarena: URL de Ollama, credenciales del evaluador o hiperparámetros por defecto. Solo se modifican los campos indicados.",
+        "Actualiza la configuración de SLMarena: URL de Ollama, credenciales del evaluador activo, evaluador activo del catálogo o hiperparámetros por defecto. Solo se modifican los campos indicados.",
       inputSchema: updateSettingsInputSchema,
     },
     async (args) => {
       try {
         return jsonContent(await updateSettings(args ?? {}));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_evaluator",
+    {
+      title: "Agregar modelo evaluador",
+      description:
+        "Registra un nuevo modelo evaluador (URL base, modelo y API key opcional) en el catálogo de evaluadores de SLMarena. Si make_active es true (o no hay ningún evaluador), pasa a ser el usado en las evaluaciones.",
+      inputSchema: addEvaluatorInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await addEvaluator(args as Parameters<typeof addEvaluator>[0]));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_evaluator",
+    {
+      title: "Actualizar modelo evaluador",
+      description:
+        "Modifica los datos de un evaluador del catálogo (label, URL base, modelo, API key) o lo marca como activo con make_active.",
+      inputSchema: updateEvaluatorInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await updateEvaluator(args as Parameters<typeof updateEvaluator>[0]));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_evaluator",
+    {
+      title: "Eliminar modelo evaluador",
+      description:
+        "Elimina un evaluador del catálogo. Si era el activo, el indicador de evaluador activo queda sin valor.",
+      inputSchema: deleteEvaluatorInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await deleteEvaluator(args as Parameters<typeof deleteEvaluator>[0]));
       } catch (error) {
         return errorResult(error);
       }

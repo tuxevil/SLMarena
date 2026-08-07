@@ -3052,6 +3052,15 @@ select:focus,
   border-color: var(--muted);
 }
 
+.btn-ghost-sm.danger {
+  color: #ef4444;
+}
+
+.btn-ghost-sm.danger:hover {
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+  border-color: #ef4444;
+}
+
 /* Settings Form Grid */
 .settings-panel-form {
   display: flex;
@@ -3119,6 +3128,108 @@ select:focus,
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 14px;
+}
+
+.evaluator-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.evaluator-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--surface);
+}
+
+.evaluator-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.evaluator-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.evaluator-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.evaluator-label {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.evaluator-model {
+  font-family: monospace;
+  font-size: 0.82rem;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.evaluator-url {
+  font-size: 0.76rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.key-badge {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.key-badge.configured {
+  color: #22c55e;
+}
+
+.evaluator-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.evaluator-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.evaluator-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.evaluator-add-form h5 {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.error-banner {
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.82rem;
 }
 
 .settings-actions {

@@ -13,11 +13,38 @@ CREATE TABLE IF NOT EXISTS app_settings (
   evaluator_base_url TEXT,
   evaluator_model TEXT,
   evaluator_api_key_encrypted TEXT,
+  active_evaluator_id UUID,
   parameters_json JSONB,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS parameters_json JSONB;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_evaluator_id UUID;
+
+CREATE TABLE IF NOT EXISTS evaluators (
+  id UUID PRIMARY KEY,
+  label VARCHAR(255) NOT NULL,
+  base_url TEXT NOT NULL,
+  model VARCHAR(255) NOT NULL,
+  api_key_encrypted TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO evaluators (id, label, base_url, model, api_key_encrypted, created_at, updated_at)
+SELECT gen_random_uuid(), s.evaluator_model, s.evaluator_base_url, s.evaluator_model, s.evaluator_api_key_encrypted, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM app_settings s
+WHERE NOT EXISTS (SELECT 1 FROM evaluators)
+  AND s.evaluator_base_url IS NOT NULL
+  AND s.evaluator_model IS NOT NULL;
+
+UPDATE app_settings
+SET active_evaluator_id = (SELECT id FROM evaluators ORDER BY created_at ASC LIMIT 1)
+WHERE id = 1
+  AND active_evaluator_id IS NULL
+  AND evaluator_base_url IS NOT NULL
+  AND evaluator_model IS NOT NULL
+  AND EXISTS (SELECT 1 FROM evaluators);
 
 CREATE TABLE IF NOT EXISTS test_runs (
   id UUID PRIMARY KEY,

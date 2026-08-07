@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import type {
   BenchmarkParameters,
   Evaluation,
+  EvaluatorEntry,
   HumanStatus,
   ModelResult,
   RunStatus,
@@ -35,7 +36,18 @@ function initSqliteTables(db: Database.Database) {
       evaluator_base_url TEXT,
       evaluator_model TEXT,
       evaluator_api_key_encrypted TEXT,
+      active_evaluator_id TEXT,
       parameters_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS evaluators (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      base_url TEXT NOT NULL,
+      model TEXT NOT NULL,
+      api_key_encrypted TEXT,
+      created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
 
@@ -240,6 +252,39 @@ function initSqliteTables(db: Database.Database) {
     migrationDb.exec("ALTER TABLE model_results ADD COLUMN sample_index INTEGER NOT NULL DEFAULT 0");
   }
 
+  const settingsColumns = migrationDb.prepare("PRAGMA table_info(app_settings)").all() as SqlRow[];
+  if (!settingsColumns.some((column) => column.name === "active_evaluator_id")) {
+    migrationDb.exec("ALTER TABLE app_settings ADD COLUMN active_evaluator_id TEXT");
+  }
+
+  const hasEvaluatorsTable = Number((migrationDb
+    .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'evaluators'")
+    .get() as SqlRow).count);
+  const evaluatorCount = hasEvaluatorsTable
+    ? Number((migrationDb.prepare("SELECT COUNT(*) AS c FROM evaluators").get() as SqlRow).c)
+    : 0;
+  if (evaluatorCount === 0) {
+    const legacy = migrationDb
+      .prepare("SELECT evaluator_base_url, evaluator_model, evaluator_api_key_encrypted FROM app_settings WHERE id = 1")
+      .get() as SqlRow | undefined;
+    if (legacy?.evaluator_base_url && legacy?.evaluator_model) {
+      const id = crypto.randomUUID();
+      migrationDb.prepare(`
+        INSERT INTO evaluators (id, label, base_url, model, api_key_encrypted, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        String(legacy.evaluator_model),
+        String(legacy.evaluator_base_url),
+        String(legacy.evaluator_model),
+        legacy.evaluator_api_key_encrypted ? String(legacy.evaluator_api_key_encrypted) : null,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      );
+      migrationDb.prepare("UPDATE app_settings SET active_evaluator_id = ? WHERE id = 1").run(id);
+    }
+  }
+
   const hasScenarios = Number((migrationDb
     .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'scenarios'")
     .get() as SqlRow).count);
@@ -316,25 +361,91 @@ export function sqliteDeleteResult(runId: string, resultId: string): boolean {
   return result.changes > 0;
 }
 
+export function sqliteListEvaluators(): EvaluatorEntry[] {
+  const rows = getSqliteDb()
+    .prepare("SELECT id, label, base_url, model, api_key_encrypted FROM evaluators ORDER BY created_at ASC, id ASC")
+    .all() as SqlRow[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    label: String(row.label),
+    baseUrl: String(row.base_url),
+    model: String(row.model),
+    apiKeyConfigured: Boolean(row.api_key_encrypted),
+  }));
+}
+
+export function sqliteUpsertEvaluator(input: {
+  id?: string;
+  label?: string;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  clearKey?: boolean;
+}): EvaluatorEntry {
+  const db = getSqliteDb();
+  const id = input.id ?? crypto.randomUUID();
+  const existing = db.prepare("SELECT api_key_encrypted FROM evaluators WHERE id = ?").get(id) as SqlRow | undefined;
+  let encrypted: string | null = null;
+  if (input.apiKey) {
+    encrypted = encryptSecret(input.apiKey);
+  } else if (!input.clearKey && existing?.api_key_encrypted) {
+    encrypted = String(existing.api_key_encrypted);
+  }
+  const label = input.label?.trim() || input.model;
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO evaluators (id, label, base_url, model, api_key_encrypted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      label = excluded.label,
+      base_url = excluded.base_url,
+      model = excluded.model,
+      api_key_encrypted = excluded.api_key_encrypted,
+      updated_at = excluded.updated_at
+  `).run(id, label, input.baseUrl, input.model, encrypted, now, now);
+  return { id, label, baseUrl: input.baseUrl, model: input.model, apiKeyConfigured: Boolean(encrypted) };
+}
+
+export function sqliteDeleteEvaluator(id: string): boolean {
+  return getSqliteDb().prepare("DELETE FROM evaluators WHERE id = ?").run(id).changes > 0;
+}
+
+export function sqliteLoadActiveEvaluatorId(): string | null {
+  const row = getSqliteDb().prepare("SELECT active_evaluator_id FROM app_settings WHERE id = 1").get() as SqlRow | undefined;
+  return row?.active_evaluator_id ? String(row.active_evaluator_id) : null;
+}
+
+export function sqliteSetActiveEvaluator(id: string | null) {
+  getSqliteDb()
+    .prepare("UPDATE app_settings SET active_evaluator_id = ?, updated_at = ? WHERE id = 1")
+    .run(id, new Date().toISOString());
+}
+
+export function sqliteLoadEvaluatorKey(id: string): string | null {
+  const row = getSqliteDb()
+    .prepare("SELECT api_key_encrypted FROM evaluators WHERE id = ?")
+    .get(id) as SqlRow | undefined;
+  if (!row?.api_key_encrypted) return null;
+  try {
+    return decryptSecret(String(row.api_key_encrypted));
+  } catch (error) {
+    console.error("[slmarena] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
 export function sqliteLoadSettings(): {
   ollamaUrl: string;
-  evaluatorBaseUrl: string;
-  evaluatorModel: string;
-  evaluatorApiKeyConfigured: boolean;
+  evaluators: EvaluatorEntry[];
+  activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
   parameters: BenchmarkParameters;
 } | null {
   const row = getSqliteDb().prepare("SELECT * FROM app_settings WHERE id = 1").get() as SqlRow | undefined;
   if (!row) return null;
-  const encrypted = row.evaluator_api_key_encrypted ? String(row.evaluator_api_key_encrypted) : null;
-  let apiKey: string | null = null;
-  if (encrypted) {
-    try {
-      apiKey = decryptSecret(encrypted);
-    } catch (error) {
-      console.error("[slmarena] [Settings] Could not decrypt evaluator credentials:", error instanceof Error ? error.message : String(error));
-    }
-  }
+  const evaluators = sqliteListEvaluators();
+  const activeEvaluatorId = row.active_evaluator_id ? String(row.active_evaluator_id) : null;
+  const active = evaluators.find((evaluator) => evaluator.id === activeEvaluatorId) ?? null;
   let params: BenchmarkParameters = { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 4096 };
   if (row.parameters_json) {
     try {
@@ -351,37 +462,39 @@ export function sqliteLoadSettings(): {
 
   return {
     ollamaUrl: String(row.ollama_url),
-    evaluatorBaseUrl: String(row.evaluator_base_url || ""),
-    evaluatorModel: String(row.evaluator_model || ""),
-    evaluatorApiKeyConfigured: Boolean(encrypted),
-    evaluatorApiKey: apiKey,
+    evaluators,
+    activeEvaluatorId,
+    evaluatorApiKey: active ? sqliteLoadEvaluatorKey(active.id) : null,
     parameters: params,
   };
 }
 
 export function sqlitePersistSettings(settings: {
   ollamaUrl: string;
-  evaluatorBaseUrl: string;
-  evaluatorModel: string;
+  evaluators: EvaluatorEntry[];
+  activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
   parameters: BenchmarkParameters;
 }) {
+  const active = settings.evaluators.find((evaluator) => evaluator.id === settings.activeEvaluatorId) ?? null;
   const encrypted = settings.evaluatorApiKey ? encryptSecret(settings.evaluatorApiKey) : null;
   getSqliteDb().prepare(`
-    INSERT INTO app_settings (id, ollama_url, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, parameters_json, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?, ?)
+    INSERT INTO app_settings (id, ollama_url, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, active_evaluator_id, parameters_json, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       ollama_url = excluded.ollama_url,
       evaluator_base_url = excluded.evaluator_base_url,
       evaluator_model = excluded.evaluator_model,
       evaluator_api_key_encrypted = excluded.evaluator_api_key_encrypted,
+      active_evaluator_id = excluded.active_evaluator_id,
       parameters_json = excluded.parameters_json,
       updated_at = excluded.updated_at
   `).run(
     settings.ollamaUrl,
-    settings.evaluatorBaseUrl || null,
-    settings.evaluatorModel || null,
+    active?.baseUrl ?? null,
+    active?.model ?? null,
     encrypted,
+    settings.activeEvaluatorId ?? null,
     JSON.stringify(settings.parameters),
     new Date().toISOString(),
   );

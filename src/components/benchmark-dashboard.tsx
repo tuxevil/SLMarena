@@ -24,9 +24,8 @@ import { SettingsPanel } from "@/components/settings/settings-panel";
 type SettingsPayload = {
   settings?: {
     ollamaUrl: string;
-    evaluatorBaseUrl: string;
-    evaluatorModel: string;
-    evaluatorApiKeyConfigured: boolean;
+    evaluators?: Array<{ id: string; label: string; baseUrl: string; model: string; apiKeyConfigured: boolean }>;
+    activeEvaluatorId?: string | null;
     parameters?: { temperature: number; numCtx: number; topP: number; repeatPenalty: number; numPredict: number };
   };
 };
@@ -39,10 +38,8 @@ export function BenchmarkDashboard() {
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
-  const [evaluatorBaseUrl, setEvaluatorBaseUrl] = useState("");
-  const [evaluatorApiKey, setEvaluatorApiKey] = useState("");
-  const [evaluatorModel, setEvaluatorModel] = useState("");
-  const [evaluatorKeyConfigured, setEvaluatorKeyConfigured] = useState(false);
+  const [evaluators, setEvaluators] = useState<Array<{ id: string; label: string; baseUrl: string; model: string; apiKeyConfigured: boolean }>>([]);
+  const [activeEvaluatorId, setActiveEvaluatorId] = useState<string | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [notice, setNotice] = useState("");
 
@@ -117,9 +114,8 @@ export function BenchmarkDashboard() {
       .then((payload) => {
         if (payload.settings) {
           if (payload.settings.ollamaUrl) setOllamaUrl(payload.settings.ollamaUrl);
-          if (payload.settings.evaluatorBaseUrl !== undefined) setEvaluatorBaseUrl(payload.settings.evaluatorBaseUrl);
-          if (payload.settings.evaluatorModel !== undefined) setEvaluatorModel(payload.settings.evaluatorModel);
-          setEvaluatorKeyConfigured(Boolean(payload.settings.evaluatorApiKeyConfigured));
+          if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
+          if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
           if (payload.settings.parameters) {
             setParameters({
               temperature: String(payload.settings.parameters.temperature),
@@ -372,9 +368,6 @@ export function BenchmarkDashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           ollamaUrl,
-          evaluatorBaseUrl,
-          evaluatorModel,
-          ...(evaluatorApiKey ? { evaluatorApiKey } : {}),
           parameters: {
             temperature: Number(parameters.temperature),
             numCtx: Number(parameters.numCtx),
@@ -384,16 +377,64 @@ export function BenchmarkDashboard() {
           },
         }),
       });
-      const payload = (await res.json()) as { settings?: { evaluatorApiKeyConfigured: boolean }; error?: string };
+      const payload = (await res.json()) as { settings?: { evaluators?: typeof evaluators; activeEvaluatorId?: string | null }; error?: string };
       if (!res.ok || !payload.settings) throw new Error(payload.error ?? "Error saving settings.");
-      setEvaluatorApiKey("");
-      setEvaluatorKeyConfigured(payload.settings.evaluatorApiKeyConfigured);
+      if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
+      if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
       setNotice("Settings saved successfully.");
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Error saving settings.");
     } finally {
       setIsSavingSettings(false);
     }
+  };
+
+  const handleSetActiveEvaluator = async (id: string | null) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ activeEvaluatorId: id }),
+      });
+      const payload = (await res.json()) as { settings?: { evaluators?: typeof evaluators; activeEvaluatorId?: string | null }; error?: string };
+      if (!res.ok || !payload.settings) throw new Error(payload.error ?? "Error changing active evaluator.");
+      if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
+      if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Error changing active evaluator.");
+    }
+  };
+
+  const handleAddEvaluator = async (input: { label: string; baseUrl: string; model: string; apiKey: string; makeActive: boolean }) => {
+    const res = await fetch("/api/settings/evaluators", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const payload = (await res.json()) as { settings?: { evaluators?: typeof evaluators; activeEvaluatorId?: string | null }; error?: string };
+    if (!res.ok || !payload.settings) throw new Error(payload.error ?? "Error adding evaluator.");
+    if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
+    if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
+  };
+
+  const handleUpdateEvaluator = async (id: string, input: { label?: string; baseUrl?: string; model?: string; apiKey?: string }) => {
+    const res = await fetch(`/api/settings/evaluators/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const payload = (await res.json()) as { settings?: { evaluators?: typeof evaluators; activeEvaluatorId?: string | null }; error?: string };
+    if (!res.ok || !payload.settings) throw new Error(payload.error ?? "Error updating evaluator.");
+    if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
+    if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
+  };
+
+  const handleDeleteEvaluator = async (id: string) => {
+    const res = await fetch(`/api/settings/evaluators/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const payload = (await res.json()) as { settings?: { evaluators?: typeof evaluators; activeEvaluatorId?: string | null }; error?: string };
+    if (!res.ok || !payload.settings) throw new Error(payload.error ?? "Error deleting evaluator.");
+    if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
+    if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
   };
 
   const togglePauseRun = async (runId: string) => {
@@ -529,13 +570,12 @@ export function BenchmarkDashboard() {
             <SettingsPanel
               ollamaUrl={ollamaUrl}
               onOllamaUrlChange={setOllamaUrl}
-              evaluatorBaseUrl={evaluatorBaseUrl}
-              onEvaluatorBaseUrlChange={setEvaluatorBaseUrl}
-              evaluatorModel={evaluatorModel}
-              onEvaluatorModelChange={setEvaluatorModel}
-              evaluatorApiKey={evaluatorApiKey}
-              onEvaluatorApiKeyChange={setEvaluatorApiKey}
-              evaluatorKeyConfigured={evaluatorKeyConfigured}
+              evaluators={evaluators}
+              activeEvaluatorId={activeEvaluatorId}
+              onSetActiveEvaluator={handleSetActiveEvaluator}
+              onAddEvaluator={handleAddEvaluator}
+              onUpdateEvaluator={handleUpdateEvaluator}
+              onDeleteEvaluator={handleDeleteEvaluator}
               parameters={parameters}
               onParametersChange={setParameters}
               onSaveSettings={handleSaveSettings}

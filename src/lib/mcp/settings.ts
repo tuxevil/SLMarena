@@ -6,6 +6,14 @@ export type Settings = {
   evaluatorBaseUrl: string;
   evaluatorModel: string;
   evaluatorApiKeyConfigured: boolean;
+  evaluators: Array<{
+    id: string;
+    label: string;
+    baseUrl: string;
+    model: string;
+    apiKeyConfigured: boolean;
+  }>;
+  activeEvaluatorId: string | null;
   parameters: {
     temperature: number;
     numCtx: number;
@@ -35,10 +43,16 @@ const settingsParametersInput = z
 
 export const updateSettingsInputSchema = {
   ollama_url: z.string().url().optional().describe("Nueva URL base del servidor Ollama."),
-  evaluator_base_url: z.string().url().optional().describe("Nueva URL base del evaluador OpenAI-compatible."),
-  evaluator_model: z.string().max(255).optional().describe("Nombre del modelo juez."),
-  evaluator_api_key: z.string().max(4096).optional().describe("API key del evaluador; se guarda cifrada."),
-  clear_evaluator_api_key: z.boolean().optional().describe("Si es true, borra la API key guardada."),
+  evaluator_base_url: z.string().url().optional().describe("Nueva URL base del evaluador activo (compat)."),
+  evaluator_model: z.string().max(255).optional().describe("Nuevo nombre del modelo juez del evaluador activo (compat)."),
+  evaluator_api_key: z.string().max(4096).optional().describe("Nueva API key del evaluador activo; se guarda cifrada."),
+  clear_evaluator_api_key: z.boolean().optional().describe("Si es true, borra la API key del evaluador activo."),
+  active_evaluator_id: z
+    .string()
+    .max(255)
+    .nullable()
+    .optional()
+    .describe("ID del evaluador del catálogo que se usará en las evaluaciones."),
   parameters: settingsParametersInput,
 };
 
@@ -48,6 +62,7 @@ export type UpdateSettingsInput = {
   evaluator_model?: string;
   evaluator_api_key?: string;
   clear_evaluator_api_key?: boolean;
+  active_evaluator_id?: string | null;
   parameters?: Record<string, unknown>;
 };
 
@@ -75,6 +90,7 @@ export async function updateSettings(args: UpdateSettingsInput): Promise<unknown
   if (args.evaluator_model !== undefined) body.evaluatorModel = args.evaluator_model;
   if (args.evaluator_api_key !== undefined) body.evaluatorApiKey = args.evaluator_api_key;
   if (args.clear_evaluator_api_key !== undefined) body.clearEvaluatorApiKey = args.clear_evaluator_api_key;
+  if (args.active_evaluator_id !== undefined) body.activeEvaluatorId = args.active_evaluator_id;
   const parameters = toCamelParams(args.parameters);
   if (parameters) body.parameters = parameters;
 
@@ -82,5 +98,89 @@ export async function updateSettings(args: UpdateSettingsInput): Promise<unknown
     method: "PATCH",
     body: JSON.stringify(body),
   });
+  return { settings: data.settings };
+}
+
+const evaluatorEndpointRefinement = z
+  .string()
+  .url()
+  .refine((value) => value.startsWith("http://") || value.startsWith("https://"), "URL must use HTTP or HTTPS.");
+
+export const addEvaluatorInputSchema = {
+  label: z.string().max(255).optional().describe("Nombre descriptivo del evaluador; si se omite se usa el modelo."),
+  base_url: evaluatorEndpointRefinement.describe("URL base del endpoint OpenAI-compatible."),
+  model: z.string().min(1).max(255).describe("Nombre del modelo juez."),
+  api_key: z.string().max(4096).optional().describe("API key del evaluador; se guarda cifrada."),
+  make_active: z.boolean().optional().describe("Si es true, este evaluador pasa a ser el usado en las evaluaciones."),
+};
+
+export type AddEvaluatorInput = {
+  label?: string;
+  base_url: string;
+  model: string;
+  api_key?: string;
+  make_active?: boolean;
+};
+
+export const updateEvaluatorInputSchema = {
+  evaluator_id: z.string().min(1).max(255).describe("ID del evaluador a modificar."),
+  label: z.string().max(255).optional().describe("Nuevo nombre descriptivo."),
+  base_url: evaluatorEndpointRefinement.optional().describe("Nueva URL base del endpoint."),
+  model: z.string().min(1).max(255).optional().describe("Nuevo nombre del modelo juez."),
+  api_key: z.string().max(4096).optional().describe("Nueva API key; se guarda cifrada."),
+  make_active: z.boolean().optional().describe("Si es true, este evaluador pasa a ser el usado en las evaluaciones."),
+};
+
+export type UpdateEvaluatorInput = {
+  evaluator_id: string;
+  label?: string;
+  base_url?: string;
+  model?: string;
+  api_key?: string;
+  make_active?: boolean;
+};
+
+export const deleteEvaluatorInputSchema = {
+  evaluator_id: z.string().min(1).max(255).describe("ID del evaluador a eliminar."),
+};
+
+export type DeleteEvaluatorInput = {
+  evaluator_id: string;
+};
+
+export async function addEvaluator(args: AddEvaluatorInput): Promise<unknown> {
+  const body: Record<string, unknown> = {
+    baseUrl: args.base_url,
+    model: args.model,
+  };
+  if (args.label !== undefined) body.label = args.label;
+  if (args.api_key !== undefined) body.apiKey = args.api_key;
+  if (args.make_active !== undefined) body.makeActive = args.make_active;
+  const data = await slmarenaFetch<SettingsPayload>("/api/settings/evaluators", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return { settings: data.settings };
+}
+
+export async function updateEvaluator(args: UpdateEvaluatorInput): Promise<unknown> {
+  const body: Record<string, unknown> = {};
+  if (args.label !== undefined) body.label = args.label;
+  if (args.base_url !== undefined) body.baseUrl = args.base_url;
+  if (args.model !== undefined) body.model = args.model;
+  if (args.api_key !== undefined) body.apiKey = args.api_key;
+  if (args.make_active !== undefined) body.makeActive = args.make_active;
+  const data = await slmarenaFetch<SettingsPayload>(`/api/settings/evaluators/${encodeURIComponent(args.evaluator_id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  return { settings: data.settings };
+}
+
+export async function deleteEvaluator(args: DeleteEvaluatorInput): Promise<unknown> {
+  const data = await slmarenaFetch<SettingsPayload>(
+    `/api/settings/evaluators/${encodeURIComponent(args.evaluator_id)}`,
+    { method: "DELETE" },
+  );
   return { settings: data.settings };
 }

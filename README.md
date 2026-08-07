@@ -49,7 +49,7 @@ The application is structured into **4 independent core modules**, cleanly separ
    - **Left Panel:** Syntax-highlighted system prompt editor, category selector, Canary Token Injector (`CANARY_SEC_9842_ALPHA`), multi-turn conversation builder, scenario library saver, and delete button (`[ 🗑️ Delete from Library ]`).
    - **Right Panel:** **Mode A (Model Onboarding)** (run the active editor scenario on a single model), **Mode B (Suite Update)** (run 1 scenario across ALL local models), and **Custom Matrix Mode** (N models $\times$ M scenarios) with a live model refresh trigger (`[ 🔄 Refresh Models ]`).
 3. **⚡ Live Monitor (`/monitor`):** Technical operations and real-time inference monitoring. Displays local Ollama server status (ping, installed models, active model loaded in VRAM via `/api/ps`, VRAM usage), active run progress bar, token-by-token live SSE streaming box, queue flow controls (*Pause*, *Resume*, *Cancel*, *Retry Failed*), and run history log.
-4. **⚙️ Settings (`/settings`):** Endpoint configurations (Ollama URL, Evaluator API base URL & key), inference hyper-parameters, and theme options.
+4. **⚙️ Settings (`/settings`):** Endpoint configurations (Ollama URL, evaluator catalog with active judge selection), inference hyper-parameters, and theme options.
 5. **Level 2: Model Profile (`/models/[modelId]` & Inline Modal):** Technical dossier for an individual model available both as a dedicated page and an interactive modal when clicking `[View Profile]` on the Leaderboard. Displays model averages (Rating, Grammar, Compliance, Accuracy, Security Resilience), filterable executed test benchmarks table, and inspector triggers.
 6. **Level 3: Test Inspector Drawer:** Slide-over panel sliding from the right without losing background context. Displays System Prompt, User Prompt, SLM Output Response, Evaluator Verdict (star ratings, qualitative feedback, vulnerability analysis), and Execution Telemetry (*TTFT, Speed, Output Tokens, Latency*).
 
@@ -228,13 +228,15 @@ For durable worker mode:
 
 ## Configuring Evaluation
 
-Automated response evaluation requires an OpenAI-compatible `/chat/completions` judge endpoint. Configure these variables in `.env.local` or through the **Settings (`/settings`)** panel:
+Automated response evaluation requires an OpenAI-compatible `/chat/completions` judge endpoint. On first startup the `EVALUATOR_*` variables in `.env.local` seed the **evaluator catalog** and mark that entry as active; afterwards you can register, edit, and switch between multiple judge models (each with its own base URL, model name, and optional API key) from the **Settings (`/settings`)** panel or the `add_evaluator` / `update_evaluator` / `delete_evaluator` MCP tools:
 
 ```dotenv
 EVALUATOR_BASE_URL=https://api.openai.com/v1
 EVALUATOR_MODEL=gpt-4o-mini
 EVALUATOR_API_KEY=your-api-key-here
 ```
+
+The **active** evaluator (`active_evaluator_id`) is the one used to judge benchmark responses; per-run overrides via the API remain supported.
 
 ## Durable PostgreSQL and Redis Setup
 
@@ -280,8 +282,8 @@ For multi-user or background worker processing:
 | `MCP_HOST` | Host interface the MCP server binds to. | `0.0.0.0` |
 | `OLLAMA_URL` | Base URL of the target Ollama instance. Leave **unset** when the Ollama URL is saved in the app Settings — `/api/ollama/models` prefers this variable over the saved URL, so a stale value shadows the Settings and lists the wrong models. | Empty |
 | `ALLOWED_OLLAMA_HOSTS` | Comma-separated host allowlist for Ollama endpoints. | Empty (local/private IPs allowed) |
-| `EVALUATOR_BASE_URL` | Base URL for OpenAI-compatible evaluator endpoint. | Empty |
-| `EVALUATOR_MODEL` | Judge model name used for evaluation. | Empty |
+| `EVALUATOR_BASE_URL` | Base URL for OpenAI-compatible evaluator endpoint. Seeds the evaluator catalog on first startup. | Empty |
+| `EVALUATOR_MODEL` | Judge model name used for evaluation. Seeds the evaluator catalog on first startup. | Empty |
 | `EVALUATOR_API_KEY` | Judge API key. Encrypted at rest when saved via UI. | Empty |
 | `APP_ENCRYPTION_KEY` | 32-byte hex key for AES-256-GCM secret encryption. | Empty |
 | `SQLITE_PATH` | File path for SQLite database in local mode. | `./compare.db` |
@@ -313,7 +315,7 @@ For multi-user or background worker processing:
 - Control active runs (*Pause*, *Resume*, *Cancel*, *Retry Failed*).
 
 ### 4. Settings (`/settings`)
-- Configure Ollama endpoint URL, LLM Judge credentials, default inference parameters, and Light/Dark/System theme choices.
+- Configure Ollama endpoint URL, manage the **evaluator catalog** (register multiple LLM Judge models with their own base URL/API key and mark the one used in evaluations), default inference parameters, and Light/Dark/System theme choices.
 
 ### 5. Model Profile (`/models/[modelId]` & Modal)
 - Inspect a specific model's summary metrics (Rating, Grammar, Compliance, Accuracy, Security Resilience), average ratings, and filterable executed test benchmark history.
@@ -322,7 +324,9 @@ For multi-user or background worker processing:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET`, `PATCH` | `/api/settings` | Retrieve or update application configuration and credentials. |
+| `GET`, `PATCH` | `/api/settings` | Retrieve or update application configuration; `PATCH` also selects the active evaluator (`activeEvaluatorId`). |
+| `POST` | `/api/settings/evaluators` | Register a new evaluator model in the catalog (label, base URL, model, optional API key, optional `makeActive`). |
+| `PATCH`, `DELETE` | `/api/settings/evaluators/:id` | Update or remove an evaluator from the catalog (deleting the active one clears the active slot). |
 | `GET`, `POST` | `/api/scenarios` | List saved scenarios or create a new benchmark scenario. |
 | `GET`, `PATCH`, `DELETE` | `/api/scenarios/:id` | Fetch, update, or delete a specific benchmark scenario. |
 | `GET`, `POST` | `/api/runs` | Search benchmark history (with pagination & filters) or submit a new run. |
@@ -370,7 +374,8 @@ The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `h
 | `launch_matrix_test` | Launch a benchmark run over a matrix of models × scenarios (optionally `["ALL"]` for every Ollama model). |
 | `list_runs` | Search run history with filters (keyword, date, model, min score, vulnerable-only, pagination). |
 | `pause_run` / `resume_run` / `cancel_run` | Pause, resume, or cancel a queued/running benchmark run. |
-| `get_settings` / `update_settings` | Read or update app settings (Ollama URL, evaluator credentials, default hyper-parameters). |
+| `get_settings` / `update_settings` | Read or update app settings (Ollama URL, active evaluator selection, default hyper-parameters). |
+| `add_evaluator` / `update_evaluator` / `delete_evaluator` | Manage the evaluator catalog (label, base URL, model, API key, make active). |
 | `get_analysis` | Aggregate a scenario's performance across all evaluated models (per-model samples, avg stars, ASR). |
 | `review_result` | Override the judge verdict with a human review (APPROVED/REJECTED/REVIEWED/UNREVIEWED) and notes. |
 | `get_run_result_details` | Fetch one individual model result of a run (turns, telemetry, judge evaluation). |
@@ -388,9 +393,10 @@ The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `h
 
 Runs, model results, per-turn telemetry, evaluator verdicts, scenarios, and application settings are persisted across restarts in either storage engine:
 
-- **Local mode (default):** Single-file SQLite database via Better-SQLite3 (`SQLITE_PATH`, default `./compare.db`) in WAL mode. The schema — `app_settings`, `scenarios`, `test_runs`, `model_results`, `model_result_turns`, `evaluations` — is created and migrated automatically on first access (`src/lib/sqlite-db.ts`).
+- **Local mode (default):** Single-file SQLite database via Better-SQLite3 (`SQLITE_PATH`, default `./compare.db`) in WAL mode. The schema — `app_settings`, `evaluators`, `scenarios`, `test_runs`, `model_results`, `model_result_turns`, `evaluations` — is created and migrated automatically on first access (`src/lib/sqlite-db.ts`).
 - **Durable mode:** PostgreSQL (`DATABASE_URL`) with the same schema defined in `db/schema.sql`, applied with `npm run db:migrate` via `psql`. Lists and parameter objects are stored as JSONB, and a monotonic `control_version` guards against out-of-order writes from the concurrent worker.
-- **Secrets:** Evaluator API keys are encrypted at rest with AES-256-GCM (`APP_ENCRYPTION_KEY`) — they are stored as `evaluator_api_key_encrypted` and never returned by the API; only a `evaluatorApiKeyConfigured` boolean is exposed.
+- **Evaluator catalog:** Multiple evaluator models can be registered (each with its own base URL, model name, and optional API key). Exactly one is marked **active** (`active_evaluator_id`) and is the one used to judge benchmark responses; per-run overrides via the API remain supported. On first startup, legacy `EVALUATOR_*` config is seeded into the catalog and activated.
+- **Secrets:** Evaluator API keys are encrypted at rest with AES-256-GCM (`APP_ENCRYPTION_KEY`) — they are stored as `api_key_encrypted` per evaluator and never returned by the API; only a `apiKeyConfigured` boolean is exposed.
 - **Human audit trail:** Each model result carries a review status (`UNREVIEWED`, `REVIEWED`, `APPROVED`, `REJECTED`) and optional reviewer notes via `/api/results/:id/review`.
 
 ## Project Layout
@@ -413,7 +419,7 @@ src/
 │   ├── layout/                 Topbar navigation and theme switcher
 │   ├── models/                 Model dossier profile components
 │   ├── monitor/                Live monitor queue and SSE token stream panel
-│   ├── settings/               Configuration, evaluator credentials, and theme selection panel
+│   ├── settings/               Configuration, evaluator catalog, and theme selection panel
 │   ├── suites/                 Test suite creator, canary injector, and matrix orchestrator
 │   ├── benchmark-dashboard.tsx Tabbed leaderboard dashboard (analytics / wizard / history)
 │   ├── theme-provider.tsx      Light/Dark/System theme context provider

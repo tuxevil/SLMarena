@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cancelRun, getRunResultDetails, listRuns, pauseRun, resumeRun } from "./runs";
-import { getSettings, updateSettings } from "./settings";
+import { addEvaluator, deleteEvaluator, getSettings, updateEvaluator, updateSettings } from "./settings";
 import { getScenarioAnalysis, reviewResult } from "./analysis";
 
 function mockFetchSequence(...responses: unknown[]) {
@@ -130,6 +130,64 @@ describe("updateSettings", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body.ollamaUrl).toBe("http://10.128.128.254:11434");
     expect(body.parameters).toEqual({ temperature: 0.5, numCtx: 2048 });
+  });
+
+  it("forwards active_evaluator_id as activeEvaluatorId", async () => {
+    const mock = mockFetchSequence({
+      settings: { ollamaUrl: "http://localhost:11434", evaluators: [], activeEvaluatorId: "ev-2", parameters: {} },
+    });
+    await updateSettings({ active_evaluator_id: "ev-2" });
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/settings");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.activeEvaluatorId).toBe("ev-2");
+  });
+});
+
+describe("evaluator catalog tools", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const settingsStub = {
+    settings: {
+      ollamaUrl: "http://localhost:11434",
+      evaluators: [{ id: "ev-1", label: "GPT judge", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini", apiKeyConfigured: true }],
+      activeEvaluatorId: "ev-1",
+      parameters: {},
+    },
+  };
+
+  it("add_evaluator POSTs to the catalog endpoint", async () => {
+    const mock = mockFetchSequence(settingsStub);
+    await addEvaluator({ label: "GPT judge", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini", api_key: "sk-x", make_active: true });
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/settings/evaluators");
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).toEqual({
+      label: "GPT judge",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+      apiKey: "sk-x",
+      makeActive: true,
+    });
+  });
+
+  it("update_evaluator PATCHes the target evaluator", async () => {
+    const mock = mockFetchSequence(settingsStub);
+    await updateEvaluator({ evaluator_id: "ev-1", model: "gpt-4o", make_active: true });
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/settings/evaluators/ev-1");
+    expect(init.method).toBe("PATCH");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).toEqual({ model: "gpt-4o", makeActive: true });
+  });
+
+  it("delete_evaluator DELETEs the target evaluator", async () => {
+    const mock = mockFetchSequence(settingsStub);
+    await deleteEvaluator({ evaluator_id: "ev-1" });
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/settings/evaluators/ev-1");
+    expect(init.method).toBe("DELETE");
   });
 });
 

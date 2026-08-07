@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRunSchema, securityAttackTypeSchema, settingsUpdateSchema } from "./contracts";
+import { createRunSchema, evaluatorUpdateSchema, evaluatorUpsertSchema, securityAttackTypeSchema, settingsUpdateSchema } from "./contracts";
 import { SECURITY_TEMPLATES } from "./security-templates";
 
 describe("settingsUpdateSchema", () => {
@@ -25,6 +25,62 @@ describe("settingsUpdateSchema", () => {
 
     expect(parsed.success).toBe(true);
     expect(parsed.data?.parameters?.numCtx).toBe(16384);
+  });
+
+  it("accepts an activeEvaluatorId selection", () => {
+    const parsed = settingsUpdateSchema.safeParse({
+      activeEvaluatorId: "ev-1",
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.activeEvaluatorId).toBe("ev-1");
+  });
+});
+
+describe("evaluatorUpsertSchema", () => {
+  it("accepts a new evaluator with optional label, api key and makeActive", () => {
+    const parsed = evaluatorUpsertSchema.safeParse({
+      label: "GPT judge",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+      apiKey: "sk-123",
+      makeActive: true,
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.model).toBe("gpt-4o-mini");
+    expect(parsed.data?.makeActive).toBe(true);
+  });
+
+  it("accepts a new evaluator without label (falls back to model)", () => {
+    const parsed = evaluatorUpsertSchema.safeParse({
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.label).toBeUndefined();
+  });
+
+  it("rejects non-HTTP base URLs", () => {
+    const parsed = evaluatorUpsertSchema.safeParse({
+      baseUrl: "file:///etc/passwd",
+      model: "gpt-4o-mini",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("evaluatorUpdateSchema", () => {
+  it("allows partial updates of any single field", () => {
+    const parsed = evaluatorUpdateSchema.safeParse({ model: "gpt-4o" });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.model).toBe("gpt-4o");
+
+    const parsedMakeActive = evaluatorUpdateSchema.safeParse({ makeActive: true });
+    expect(parsedMakeActive.success).toBe(true);
+    expect(parsedMakeActive.data?.makeActive).toBe(true);
   });
 });
 

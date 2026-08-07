@@ -3,6 +3,7 @@ import type {
   CreateRunInput,
   AppSettings,
   Evaluation,
+  EvaluatorEntry,
   HumanStatus,
   ModelResult,
   RunEvent,
@@ -13,7 +14,9 @@ import type {
 } from "@/lib/contracts";
 import { SECURITY_TEMPLATES } from "@/lib/security-templates";
 import {
+  deletePersistedEvaluator,
   deletePersistedResult,
+  loadPersistedEvaluatorKey,
   loadPersistedSettings,
   loadPersistedState,
   queuePersistedRun,
@@ -21,8 +24,10 @@ import {
   persistScenario,
   persistHumanReview,
   persistSettings,
+  setPersistedActiveEvaluator,
   type PersistedSettings,
   type RunPersistenceConfig,
+  upsertPersistedEvaluator,
   waitForPersistedRun,
 } from "@/lib/database";
 import { publishRunEvent } from "@/lib/run-events";
@@ -101,12 +106,14 @@ export const benchmarkStore = {
     state.hydrationPromise = (async () => {
       if (!state.hydrated) {
         const [persisted, persistedSettings] = await Promise.all([loadPersistedState(), loadPersistedSettings()]);
-        if (persistedSettings) state.settings = persistedSettings;
+        if (persistedSettings) state.settings = normalizePersistedSettings(persistedSettings);
         if (persisted) {
           for (const run of persisted.runs) restoreRun(run.run, run.config);
           for (const scenario of persisted.scenarios) state.scenarios.set(scenario.id, scenario);
         }
         state.hydrated = true;
+      } else {
+        state.settings = normalizePersistedSettings(state.settings);
       }
       await seedSecurityScenarios();
     })().finally(() => {
@@ -116,22 +123,117 @@ export const benchmarkStore = {
   },
 
   getSettings(): AppSettings {
+    const active = state.settings.evaluators.find((evaluator) => evaluator.id === state.settings.activeEvaluatorId) ?? null;
     return {
       ollamaUrl: state.settings.ollamaUrl,
-      evaluatorBaseUrl: state.settings.evaluatorBaseUrl,
-      evaluatorModel: state.settings.evaluatorModel,
-      evaluatorApiKeyConfigured: Boolean(state.settings.evaluatorApiKey),
+      evaluatorBaseUrl: active?.baseUrl ?? "",
+      evaluatorModel: active?.model ?? "",
+      evaluatorApiKeyConfigured: Boolean(active?.apiKeyConfigured),
+      evaluators: state.settings.evaluators,
+      activeEvaluatorId: state.settings.activeEvaluatorId,
       parameters: state.settings.parameters,
     };
   },
 
   getEvaluatorConfig(): CreateRunInput["evaluator"] {
-    if (!state.settings.evaluatorBaseUrl || !state.settings.evaluatorModel || !state.settings.evaluatorApiKey) return undefined;
+    const active = state.settings.evaluators.find((evaluator) => evaluator.id === state.settings.activeEvaluatorId) ?? null;
+    if (!active || !state.settings.evaluatorApiKey) return undefined;
     return {
-      baseUrl: state.settings.evaluatorBaseUrl,
-      model: state.settings.evaluatorModel,
+      baseUrl: active.baseUrl,
+      model: active.model,
       apiKey: state.settings.evaluatorApiKey,
     };
+  },
+
+  async addEvaluator(input: {
+    label?: string;
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+    makeActive?: boolean;
+  }) {
+    const entry = await upsertPersistedEvaluator({
+      label: input.label,
+      baseUrl: input.baseUrl,
+      model: input.model,
+      apiKey: input.apiKey?.trim() || undefined,
+    });
+    let activeEvaluatorId = state.settings.activeEvaluatorId;
+    let evaluatorApiKey = state.settings.evaluatorApiKey;
+    if (input.makeActive || state.settings.evaluators.length === 0) {
+      activeEvaluatorId = entry.id;
+      evaluatorApiKey = input.apiKey?.trim() || null;
+      await setPersistedActiveEvaluator(entry.id);
+    }
+    state.settings = {
+      ...state.settings,
+      evaluators: [...state.settings.evaluators, entry],
+      activeEvaluatorId,
+      evaluatorApiKey,
+    };
+    return entry;
+  },
+
+  async updateEvaluator(
+    id: string,
+    input: {
+      label?: string;
+      baseUrl?: string;
+      model?: string;
+      apiKey?: string;
+      makeActive?: boolean;
+    },
+  ) {
+    const existing = state.settings.evaluators.find((evaluator) => evaluator.id === id);
+    if (!existing) return null;
+    const entry = await upsertPersistedEvaluator({
+      id,
+      label: input.label,
+      baseUrl: input.baseUrl ?? existing.baseUrl,
+      model: input.model ?? existing.model,
+      apiKey: input.apiKey?.trim() || undefined,
+    });
+    let activeEvaluatorId = state.settings.activeEvaluatorId;
+    let evaluatorApiKey = state.settings.evaluatorApiKey;
+    if (input.makeActive) {
+      activeEvaluatorId = id;
+      evaluatorApiKey = input.apiKey?.trim() || (id === state.settings.activeEvaluatorId ? state.settings.evaluatorApiKey : (await loadPersistedEvaluatorKey(id)) ?? null);
+      await setPersistedActiveEvaluator(id);
+    } else if (id === state.settings.activeEvaluatorId && input.apiKey?.trim()) {
+      evaluatorApiKey = input.apiKey.trim();
+    }
+    state.settings = {
+      ...state.settings,
+      evaluators: state.settings.evaluators.map((evaluator) => (evaluator.id === id ? entry : evaluator)),
+      activeEvaluatorId,
+      evaluatorApiKey,
+    };
+    return entry;
+  },
+
+  async deleteEvaluator(id: string) {
+    const deleted = await deletePersistedEvaluator(id);
+    if (!deleted) return false;
+    const wasActive = state.settings.activeEvaluatorId === id;
+    state.settings = {
+      ...state.settings,
+      evaluators: state.settings.evaluators.filter((evaluator) => evaluator.id !== id),
+      activeEvaluatorId: wasActive ? null : state.settings.activeEvaluatorId,
+      evaluatorApiKey: wasActive ? null : state.settings.evaluatorApiKey,
+    };
+    if (wasActive) await setPersistedActiveEvaluator(null);
+    return true;
+  },
+
+  async setActiveEvaluator(id: string | null) {
+    if (id !== null && !state.settings.evaluators.some((evaluator) => evaluator.id === id)) return null;
+    await setPersistedActiveEvaluator(id);
+    state.settings = {
+      ...state.settings,
+      activeEvaluatorId: id,
+      evaluatorApiKey: id === null ? null : ((await loadPersistedEvaluatorKey(id)) ?? null),
+    };
+    return state.settings.activeEvaluatorId;
   },
 
   async updateSettings(input: {
@@ -140,18 +242,45 @@ export const benchmarkStore = {
     evaluatorModel?: string;
     evaluatorApiKey?: string;
     clearEvaluatorApiKey: boolean;
+    activeEvaluatorId?: string | null;
     parameters?: import("@/lib/contracts").BenchmarkParameters;
   }) {
+    let evaluators = state.settings.evaluators;
+    const activeEvaluatorId = input.activeEvaluatorId !== undefined ? input.activeEvaluatorId : state.settings.activeEvaluatorId;
+    let evaluatorApiKey = state.settings.evaluatorApiKey;
+
+    if (input.activeEvaluatorId !== undefined) {
+      evaluatorApiKey = input.activeEvaluatorId === null ? null : ((await loadPersistedEvaluatorKey(input.activeEvaluatorId)) ?? null);
+      await setPersistedActiveEvaluator(input.activeEvaluatorId);
+    }
+
+    const legacyPatch =
+      input.evaluatorBaseUrl !== undefined ||
+      input.evaluatorModel !== undefined ||
+      input.evaluatorApiKey !== undefined ||
+      input.clearEvaluatorApiKey;
+    if (legacyPatch) {
+      const active = evaluators.find((evaluator) => evaluator.id === activeEvaluatorId) ?? null;
+      if (active) {
+        const updated = await upsertPersistedEvaluator({
+          id: active.id,
+          label: active.label,
+          baseUrl: input.evaluatorBaseUrl ?? active.baseUrl,
+          model: input.evaluatorModel ?? active.model,
+          apiKey: input.evaluatorApiKey?.trim() || undefined,
+          clearKey: input.clearEvaluatorApiKey,
+        });
+        evaluators = evaluators.map((evaluator) => (evaluator.id === updated.id ? updated : evaluator));
+        if (input.evaluatorApiKey?.trim()) evaluatorApiKey = input.evaluatorApiKey.trim();
+        if (input.clearEvaluatorApiKey) evaluatorApiKey = null;
+      }
+    }
+
     const nextSettings: PersistedSettings = {
       ollamaUrl: input.ollamaUrl ?? state.settings.ollamaUrl,
-      evaluatorBaseUrl: input.evaluatorBaseUrl ?? state.settings.evaluatorBaseUrl,
-      evaluatorModel: input.evaluatorModel ?? state.settings.evaluatorModel,
-      evaluatorApiKey: input.clearEvaluatorApiKey
-        ? null
-        : input.evaluatorApiKey?.trim()
-          ? input.evaluatorApiKey.trim()
-          : state.settings.evaluatorApiKey,
-      evaluatorApiKeyConfigured: false,
+      evaluators,
+      activeEvaluatorId,
+      evaluatorApiKey,
       parameters: input.parameters ?? state.settings.parameters,
     };
     await persistSettings(nextSettings);
@@ -498,13 +627,55 @@ function snapshot(run: StoredRun, options: { includeRawJson?: boolean } = {}): T
   });
 }
 
+function normalizePersistedSettings(settings: PersistedSettings): PersistedSettings {
+  const legacy = settings as PersistedSettings & {
+    evaluatorBaseUrl?: string;
+    evaluatorModel?: string;
+    evaluatorApiKeyConfigured?: boolean;
+  };
+  if (Array.isArray(legacy.evaluators)) {
+    return {
+      ollamaUrl: legacy.ollamaUrl,
+      evaluators: legacy.evaluators,
+      activeEvaluatorId: legacy.activeEvaluatorId ?? (legacy.evaluators.length > 0 ? legacy.evaluators[0].id : null),
+      evaluatorApiKey: legacy.evaluatorApiKey ?? null,
+      parameters: legacy.parameters,
+    };
+  }
+  const evaluators: EvaluatorEntry[] =
+    legacy.evaluatorBaseUrl && legacy.evaluatorModel
+      ? [
+          {
+            id: "legacy-evaluator",
+            label: legacy.evaluatorModel,
+            baseUrl: legacy.evaluatorBaseUrl,
+            model: legacy.evaluatorModel,
+            apiKeyConfigured: Boolean(legacy.evaluatorApiKeyConfigured),
+          },
+        ]
+      : [];
+  return {
+    ollamaUrl: legacy.ollamaUrl,
+    evaluators,
+    activeEvaluatorId: legacy.activeEvaluatorId ?? (evaluators.length > 0 ? "legacy-evaluator" : null),
+    evaluatorApiKey: legacy.evaluatorApiKey ?? null,
+    parameters: legacy.parameters,
+  };
+}
+
 function defaultSettings(): PersistedSettings {
+  const envBaseUrl = process.env.EVALUATOR_BASE_URL?.trim() ?? "";
+  const envModel = process.env.EVALUATOR_MODEL?.trim() ?? "";
+  const envKey = process.env.EVALUATOR_API_KEY ?? null;
+  const evaluators: EvaluatorEntry[] =
+    envBaseUrl && envModel
+      ? [{ id: "env-evaluator", label: envModel, baseUrl: envBaseUrl, model: envModel, apiKeyConfigured: Boolean(envKey) }]
+      : [];
   return {
     ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
-    evaluatorBaseUrl: process.env.EVALUATOR_BASE_URL ?? "",
-    evaluatorModel: process.env.EVALUATOR_MODEL ?? "",
-    evaluatorApiKey: process.env.EVALUATOR_API_KEY ?? null,
-    evaluatorApiKeyConfigured: Boolean(process.env.EVALUATOR_API_KEY),
+    evaluators,
+    activeEvaluatorId: evaluators.length > 0 ? "env-evaluator" : null,
+    evaluatorApiKey: envKey,
     parameters: {
       temperature: 0.2,
       numCtx: 8192,

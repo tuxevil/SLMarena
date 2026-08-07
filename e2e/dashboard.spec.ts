@@ -64,12 +64,20 @@ completedRun.results.push({
 });
 
 test.beforeEach(async ({ page }) => {
+  const settingsStub = {
+    ollamaUrl: "http://127.0.0.1:11434",
+    evaluatorBaseUrl: "",
+    evaluatorModel: "",
+    evaluatorApiKeyConfigured: false,
+    evaluators: [],
+    activeEvaluatorId: null,
+  };
   await page.route(/\/api\/settings/, async (route) => {
     if (route.request().method() === "PATCH") {
-      await route.fulfill({ json: { settings: { ollamaUrl: "http://127.0.0.1:11434", evaluatorBaseUrl: "", evaluatorModel: "", evaluatorApiKeyConfigured: false } } });
+      await route.fulfill({ json: { settings: settingsStub } });
       return;
     }
-    await route.fulfill({ json: { settings: { ollamaUrl: "http://127.0.0.1:11434", evaluatorBaseUrl: "", evaluatorModel: "", evaluatorApiKeyConfigured: false } } });
+    await route.fulfill({ json: { settings: settingsStub } });
   });
   await page.route(/\/api\/scenarios(?:\?|$)/, async (route) => {
     if (route.request().method() === "POST") {
