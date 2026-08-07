@@ -392,6 +392,7 @@ The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `h
 | `launch_matrix_test` | Launch a benchmark run over a matrix of models × scenarios (optionally `["ALL"]` for every Ollama model). |
 | `list_runs` | Search run history with filters (keyword, date, model, min score, vulnerable-only, pagination). |
 | `pause_run` / `resume_run` / `cancel_run` | Pause, resume, or cancel a queued/running benchmark run. |
+| `pause_all_pending_runs` / `resume_all_pending_runs` | Pause or resume every queued/running benchmark run in one call. |
 | `get_settings` / `update_settings` | Read or update app settings (Ollama URL, active evaluator selection, default hyper-parameters). |
 | `add_evaluator` / `update_evaluator` / `delete_evaluator` | Manage the evaluator catalog (label, base URL, model, API key, make active). |
 | `re_evaluate_result` | Re-judge a stored response with a catalog evaluator (no re-inference); replaces the current verdict and keeps history. |

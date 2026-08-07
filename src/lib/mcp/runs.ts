@@ -268,6 +268,77 @@ export async function reevaluateResult(args: ReevaluateInput): Promise<unknown> 
   return { run_id: data.run.id, result };
 }
 
+export const pauseAllPendingInputSchema = {};
+
+type PendingRunEntry = { run_id: string; status: string };
+
+async function forEachPendingRun(callback: (entry: PendingRunEntry, run: TestRun) => Promise<void>): Promise<void> {
+  const requestedPageSize = 100;
+  let page = 1;
+  for (;;) {
+    const data = await slmarenaFetch<RunsListPayload>(`/api/runs?page=${page}&pageSize=${requestedPageSize}`);
+    const runs = data.runs ?? [];
+    const pageSize = data.pageSize ?? requestedPageSize;
+    for (const run of runs) {
+      await callback({ run_id: run.id, status: run.status }, run);
+    }
+    if (runs.length < pageSize || page * pageSize >= (data.total ?? 0)) break;
+    page += 1;
+  }
+}
+
+export async function pauseAllPendingRuns(): Promise<unknown> {
+  const paused: PendingRunEntry[] = [];
+  const alreadyPaused: PendingRunEntry[] = [];
+  const skipped: PendingRunEntry[] = [];
+
+  await forEachPendingRun(async (entry, run) => {
+    if (run.status === "PENDING" || run.status === "RUNNING") {
+      if (run.paused) {
+        alreadyPaused.push(entry);
+      } else {
+        await controlRun(run.id, "pause");
+        paused.push(entry);
+      }
+    } else {
+      skipped.push(entry);
+    }
+  });
+
+  return {
+    paused,
+    already_paused: alreadyPaused,
+    skipped,
+    total_paused: paused.length,
+  };
+}
+
+export async function resumeAllPendingRuns(): Promise<unknown> {
+  const resumed: PendingRunEntry[] = [];
+  const alreadyResumed: PendingRunEntry[] = [];
+  const skipped: PendingRunEntry[] = [];
+
+  await forEachPendingRun(async (entry, run) => {
+    if (run.status === "PENDING" || run.status === "RUNNING") {
+      if (run.paused) {
+        await controlRun(run.id, "resume");
+        resumed.push(entry);
+      } else {
+        alreadyResumed.push(entry);
+      }
+    } else {
+      skipped.push(entry);
+    }
+  });
+
+  return {
+    resumed,
+    already_resumed: alreadyResumed,
+    skipped,
+    total_resumed: resumed.length,
+  };
+}
+
 export const jobStatusInputSchema = {
   job_id: z.string().min(1).describe("ID de la ejecución (run_id) devuelto por launch_matrix_test."),
 };

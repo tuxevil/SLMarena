@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getArenaLeaderboard, leaderboardInputSchema } from "./leaderboard";
 import { getModelProfile, modelProfileInputSchema } from "./profile";
 import { createTestScenario, createScenarioInputSchema, deleteScenarioInputSchema, deleteTestScenario, getScenarioInputSchema, getTestScenario, listTestScenarios, listTestInputSchema, updateScenarioInputSchema, updateTestScenario } from "./scenarios";
-import { checkJobStatus, getTestRunDetails, jobStatusInputSchema, launchMatrixTest, launchMatrixInputSchema, listRuns, listRunsInputSchema, pauseRun, resumeRun, cancelRun, resultDetailsInputSchema, getRunResultDetails, reevaluateInputSchema, reevaluateResult, runControlInputSchema, runDetailsInputSchema } from "./runs";
+import { checkJobStatus, getTestRunDetails, jobStatusInputSchema, launchMatrixTest, launchMatrixInputSchema, listRuns, listRunsInputSchema, pauseRun, pauseAllPendingRuns, resumeAllPendingRuns, resumeRun, cancelRun, resultDetailsInputSchema, getRunResultDetails, reevaluateInputSchema, reevaluateResult, runControlInputSchema, runDetailsInputSchema } from "./runs";
 import { listOllamaModels } from "./ollama";
 import { getSettings, updateSettings, updateSettingsInputSchema, addEvaluator, addEvaluatorInputSchema, updateEvaluator, updateEvaluatorInputSchema, deleteEvaluator, deleteEvaluatorInputSchema } from "./settings";
 import { getScenarioAnalysis, analysisInputSchema, reviewResult, reviewResultInputSchema } from "./analysis";
@@ -172,6 +172,38 @@ export function buildMcpServer(): McpServer {
     async (args) => {
       try {
         return jsonContent(await pauseRun(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "pause_all_pending_runs",
+    {
+      title: "Pausar todas las ejecuciones pendientes",
+      description:
+        "Recorre todo el historial (paginando) y pausa todas las ejecuciones en estado PENDING o RUNNING. Devuelve el resumen de las pausadas, las que ya estaban pausadas y las omitidas.",
+    },
+    async () => {
+      try {
+        return jsonContent(await pauseAllPendingRuns());
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "resume_all_pending_runs",
+    {
+      title: "Reanudar todas las ejecuciones pendientes",
+      description:
+        "Recorre todo el historial (paginando) y reanuda todas las ejecuciones pausadas en estado PENDING o RUNNING. Devuelve el resumen de las reanudadas, las que ya estaban en curso y las omitidas.",
+    },
+    async () => {
+      try {
+        return jsonContent(await resumeAllPendingRuns());
       } catch (error) {
         return errorResult(error);
       }

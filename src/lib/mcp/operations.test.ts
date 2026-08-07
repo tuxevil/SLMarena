@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelRun, getRunResultDetails, listRuns, pauseRun, reevaluateResult, resumeRun } from "./runs";
+import { cancelRun, getRunResultDetails, listRuns, pauseAllPendingRuns, pauseRun, reevaluateResult, resumeAllPendingRuns, resumeRun } from "./runs";
 import { addEvaluator, deleteEvaluator, getSettings, updateEvaluator, updateSettings } from "./settings";
 import { getScenarioAnalysis, reviewResult } from "./analysis";
 
@@ -84,6 +84,112 @@ describe("getRunResultDetails", () => {
     expect(result.result.id).toBe("res1");
     const [url] = mock.mock.calls[0] as [string];
     expect(url).toBe("http://localhost:3000/api/runs/r1/results/res1");
+  });
+});
+
+describe("pauseAllPendingRuns", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("pauses pending and running runs across pages", async () => {
+    const mock = mockFetchSequence(
+      {
+        runs: [
+          { id: "a", status: "PENDING", paused: false },
+          { id: "b", status: "RUNNING", paused: true },
+          { id: "c", status: "RUNNING", paused: false },
+        ],
+        total: 5,
+        page: 1,
+        pageSize: 3,
+      },
+      runStub,
+      runStub,
+      {
+        runs: [
+          { id: "d", status: "COMPLETED", paused: false },
+          { id: "e", status: "PENDING", paused: false },
+        ],
+        total: 5,
+        page: 2,
+        pageSize: 3,
+      },
+      runStub,
+    );
+
+    const result = (await pauseAllPendingRuns()) as {
+      paused: Array<{ run_id: string }>;
+      already_paused: Array<{ run_id: string }>;
+      skipped: Array<{ run_id: string }>;
+      total_paused: number;
+    };
+
+    expect(result.paused.map((r) => r.run_id)).toEqual(["a", "c", "e"]);
+    expect(result.already_paused.map((r) => r.run_id)).toEqual(["b"]);
+    expect(result.skipped.map((r) => r.run_id)).toEqual(["d"]);
+    expect(result.total_paused).toBe(3);
+
+    const pauseCalls = mock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === "POST");
+    expect(pauseCalls).toHaveLength(3);
+    expect(pauseCalls[0][0]).toBe("http://localhost:3000/api/runs/a/pause");
+    expect(pauseCalls[2][0]).toBe("http://localhost:3000/api/runs/e/pause");
+  });
+
+  it("returns empty result when there are no runs", async () => {
+    mockFetchSequence({ runs: [], total: 0, page: 1, pageSize: 100 });
+    const result = (await pauseAllPendingRuns()) as { total_paused: number; paused: unknown[] };
+    expect(result.total_paused).toBe(0);
+    expect(result.paused).toEqual([]);
+  });
+});
+
+describe("resumeAllPendingRuns", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("resumes paused pending/running runs and skips the rest", async () => {
+    const mock = mockFetchSequence(
+      {
+        runs: [
+          { id: "a", status: "PENDING", paused: true },
+          { id: "b", status: "RUNNING", paused: false },
+          { id: "c", status: "PENDING", paused: true },
+        ],
+        total: 4,
+        page: 1,
+        pageSize: 3,
+      },
+      runStub,
+      runStub,
+      {
+        runs: [{ id: "d", status: "COMPLETED", paused: false }],
+        total: 4,
+        page: 2,
+        pageSize: 3,
+      },
+    );
+
+    const result = (await resumeAllPendingRuns()) as {
+      resumed: Array<{ run_id: string }>;
+      already_resumed: Array<{ run_id: string }>;
+      skipped: Array<{ run_id: string }>;
+      total_resumed: number;
+    };
+
+    expect(result.resumed.map((r) => r.run_id)).toEqual(["a", "c"]);
+    expect(result.already_resumed.map((r) => r.run_id)).toEqual(["b"]);
+    expect(result.skipped.map((r) => r.run_id)).toEqual(["d"]);
+    expect(result.total_resumed).toBe(2);
+
+    const resumeCalls = mock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === "POST");
+    expect(resumeCalls).toHaveLength(2);
+    expect(resumeCalls[0][0]).toBe("http://localhost:3000/api/runs/a/resume");
+    expect(resumeCalls[1][0]).toBe("http://localhost:3000/api/runs/c/resume");
+  });
+
+  it("returns empty result when there are no runs", async () => {
+    mockFetchSequence({ runs: [], total: 0, page: 1, pageSize: 100 });
+    const result = (await resumeAllPendingRuns()) as { total_resumed: number; resumed: unknown[] };
+    expect(result.total_resumed).toBe(0);
+    expect(result.resumed).toEqual([]);
   });
 });
 
