@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getArenaLeaderboard, leaderboardInputSchema } from "./leaderboard";
 import { getModelProfile, modelProfileInputSchema } from "./profile";
 import { createTestScenario, createScenarioInputSchema, deleteScenarioInputSchema, deleteTestScenario, getScenarioInputSchema, getTestScenario, listTestScenarios, listTestInputSchema, updateScenarioInputSchema, updateTestScenario } from "./scenarios";
-import { checkJobStatus, getTestRunDetails, jobStatusInputSchema, launchMatrixTest, launchMatrixInputSchema, listRuns, listRunsInputSchema, pauseRun, resumeRun, cancelRun, resultDetailsInputSchema, getRunResultDetails, runControlInputSchema, runDetailsInputSchema } from "./runs";
+import { checkJobStatus, getTestRunDetails, jobStatusInputSchema, launchMatrixTest, launchMatrixInputSchema, listRuns, listRunsInputSchema, pauseRun, resumeRun, cancelRun, resultDetailsInputSchema, getRunResultDetails, reevaluateInputSchema, reevaluateResult, runControlInputSchema, runDetailsInputSchema } from "./runs";
 import { listOllamaModels } from "./ollama";
 import { getSettings, updateSettings, updateSettingsInputSchema, addEvaluator, addEvaluatorInputSchema, updateEvaluator, updateEvaluatorInputSchema, deleteEvaluator, deleteEvaluatorInputSchema } from "./settings";
 import { getScenarioAnalysis, analysisInputSchema, reviewResult, reviewResultInputSchema } from "./analysis";
@@ -339,6 +339,23 @@ export function buildMcpServer(): McpServer {
     async (args) => {
       try {
         return jsonContent(await getRunResultDetails(args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "re_evaluate_result",
+    {
+      title: "Re-evaluar resultado con otro juez",
+      description:
+        "Re-evalúa la respuesta ya inferida y almacenada de un resultado individual usando un evaluador del catálogo (sin volver a inferir). Reemplaza el veredicto vigente y registra el anterior en el historial de evaluaciones. Si evaluator_id se omite, usa el evaluador activo.",
+      inputSchema: reevaluateInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonContent(await reevaluateResult(args));
       } catch (error) {
         return errorResult(error);
       }

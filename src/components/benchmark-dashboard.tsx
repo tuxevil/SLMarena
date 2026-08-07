@@ -360,6 +360,19 @@ export function BenchmarkDashboard() {
     setNotice("Sample deleted from results.");
   };
 
+  const handleReevaluateRun = async (runId: string, evaluatorId: string) => {
+    const res = await fetch(`/api/runs/${runId}/reevaluate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ evaluatorId }),
+    });
+    const payload = (await res.json()) as { run?: TestRun; error?: string };
+    if (!res.ok || !payload.run) throw new Error(payload.error ?? "Re-evaluation failed.");
+    setActiveRun(payload.run);
+    setHistoryRefreshKey((k) => k + 1);
+    setNotice("Run re-evaluated with the selected judge.");
+  };
+
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
@@ -560,6 +573,7 @@ export function BenchmarkDashboard() {
               onPauseRun={togglePauseRun}
               onResumeRun={togglePauseRun}
               onCancelRun={cancelRun}
+              onReevaluateRun={handleReevaluateRun}
             />
           </div>
         )}

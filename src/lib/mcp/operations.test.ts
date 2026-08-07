@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cancelRun, getRunResultDetails, listRuns, pauseRun, resumeRun } from "./runs";
+import { cancelRun, getRunResultDetails, listRuns, pauseRun, reevaluateResult, resumeRun } from "./runs";
 import { addEvaluator, deleteEvaluator, getSettings, updateEvaluator, updateSettings } from "./settings";
 import { getScenarioAnalysis, reviewResult } from "./analysis";
 
@@ -188,6 +188,36 @@ describe("evaluator catalog tools", () => {
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost:3000/api/settings/evaluators/ev-1");
     expect(init.method).toBe("DELETE");
+  });
+});
+
+describe("re_evaluate_result", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("POSTs to the result re-evaluate endpoint with the chosen evaluator", async () => {
+    const mock = mockFetchSequence({
+      run: { id: "r1", results: [{ id: "res-1", evaluation: { evaluatorModel: "judge-b" } }] },
+    });
+    const result = (await reevaluateResult({ result_id: "res-1", evaluator_id: "ev-2" })) as {
+      run_id: string;
+      result: { evaluation: { evaluatorModel: string } };
+    };
+    expect(result.run_id).toBe("r1");
+    expect(result.result.evaluation.evaluatorModel).toBe("judge-b");
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/results/res-1/reevaluate");
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).toEqual({ evaluatorId: "ev-2" });
+  });
+
+  it("omits evaluator_id to fall back to the active evaluator", async () => {
+    const mock = mockFetchSequence({ run: { id: "r1", results: [] } });
+    await reevaluateResult({ result_id: "res-1" });
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/results/res-1/reevaluate");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).toEqual({ evaluatorId: undefined });
   });
 });
 

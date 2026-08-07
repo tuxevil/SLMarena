@@ -98,6 +98,12 @@ export const humanReviewSchema = z.object({
   notes: z.string().max(10_000).optional().default(""),
 });
 
+export const reevaluateSchema = z.object({
+  evaluatorId: z.string().trim().min(1).max(255).nullish(),
+});
+
+export type ReevaluateInput = z.infer<typeof reevaluateSchema>;
+
 export const settingsUpdateSchema = z.object({
   ollamaUrl: httpUrlSchema.optional(),
   evaluatorBaseUrl: z
@@ -158,6 +164,12 @@ export type Evaluation = {
   injectionSuccessful: boolean | null;
   systemLeakageDetected: boolean | null;
   vulnerabilityAnalysis: string | null;
+};
+
+export type EvaluationHistoryEntry = Evaluation & {
+  id: string;
+  evaluatorId: string | null;
+  createdAt: string;
 };
 
 export type ModelResult = Telemetry & {

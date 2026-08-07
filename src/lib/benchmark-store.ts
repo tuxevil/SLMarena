@@ -4,6 +4,7 @@ import type {
   AppSettings,
   Evaluation,
   EvaluatorEntry,
+  EvaluationHistoryEntry,
   HumanStatus,
   ModelResult,
   RunEvent,
@@ -14,8 +15,10 @@ import type {
 } from "@/lib/contracts";
 import { SECURITY_TEMPLATES } from "@/lib/security-templates";
 import {
+  appendEvaluationHistory,
   deletePersistedEvaluator,
   deletePersistedResult,
+  loadEvaluationHistory,
   loadPersistedEvaluatorKey,
   loadPersistedSettings,
   loadPersistedState,
@@ -30,6 +33,8 @@ import {
   upsertPersistedEvaluator,
   waitForPersistedRun,
 } from "@/lib/database";
+import { evaluateModelResponse, resolveEvaluationMode } from "@/lib/frontier-evaluator";
+import { retryTransient } from "@/lib/retry";
 import { publishRunEvent } from "@/lib/run-events";
 
 type RunListener = (event: RunEvent) => void;
@@ -143,6 +148,91 @@ export const benchmarkStore = {
       model: active.model,
       apiKey: state.settings.evaluatorApiKey,
     };
+  },
+
+  async getEvaluatorConfigById(evaluatorId?: string | null): Promise<CreateRunInput["evaluator"] | undefined> {
+    const { evaluators, activeEvaluatorId, evaluatorApiKey } = state.settings;
+    const entry = evaluators.find((evaluator) => evaluator.id === (evaluatorId ?? activeEvaluatorId)) ?? null;
+    if (!entry) return undefined;
+    let apiKey = entry.id === activeEvaluatorId ? evaluatorApiKey : null;
+    if (!apiKey) apiKey = await loadPersistedEvaluatorKey(entry.id);
+    if (!apiKey) return undefined;
+    return { baseUrl: entry.baseUrl, model: entry.model, apiKey };
+  },
+
+  async reevaluateResult(resultId: string, evaluatorId?: string | null): Promise<TestRun> {
+    const run = benchmarkStore.findResult(resultId);
+    if (!run) throw new Error("Result not found.");
+    const result = run.results.find((item) => item.id === resultId);
+    if (!result) throw new Error("Result not found.");
+    if (!result.responseText?.trim()) {
+      throw new Error("Result has no stored response to evaluate.");
+    }
+    const config = await benchmarkStore.getEvaluatorConfigById(evaluatorId);
+    if (!config) throw new Error("Evaluator not found or has no API key configured.");
+
+    await benchmarkStore.reevaluateResultWithConfig(run.id, resultId, config, evaluatorId);
+    await benchmarkStore.flush(run.id);
+    return benchmarkStore.getRun(run.id) as TestRun;
+  },
+
+  async reevaluateResultWithConfig(runId: string, resultId: string, config: CreateRunInput["evaluator"], evaluatorId?: string | null) {
+    const run = benchmarkStore.getStoredRun(runId);
+    if (!run || !config) return;
+    const result = run.results.find((item) => item.id === resultId);
+    if (!result || !result.responseText?.trim()) return;
+
+    benchmarkStore.updateResult(runId, resultId, { evalStatus: "RUNNING" });
+
+    const currentRun = benchmarkStore.getStoredRun(runId);
+    const currentResult = currentRun?.results.find((item) => item.id === resultId);
+    const evaluation = await retryTransient(
+      () =>
+        evaluateModelResponse({
+          config,
+          systemPrompt: currentRun?.systemPrompt ?? run.systemPrompt,
+          userMessages: currentRun?.userMessages ?? run.userMessages,
+          responseText: currentResult?.responseText ?? result.responseText ?? "",
+          modelName: result.modelName,
+          signal: AbortSignal.timeout(300_000),
+          mode: resolveEvaluationMode(currentRun?.category ?? run.category, currentRun?.attackType ?? run.attackType),
+        }),
+      AbortSignal.timeout(300_000),
+    );
+
+    benchmarkStore.setEvaluation(runId, resultId, evaluation);
+    benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED" });
+    await appendEvaluationHistory(resultId, evaluation, evaluatorId ?? null);
+  },
+
+  async reevaluateRun(runId: string, evaluatorId?: string | null): Promise<TestRun> {
+    const run = benchmarkStore.getStoredRun(runId);
+    if (!run) throw new Error("Run not found.");
+    const config = await benchmarkStore.getEvaluatorConfigById(evaluatorId);
+    if (!config) throw new Error("Evaluator not found or has no API key configured.");
+    const candidates = run.results.filter((item) => item.status === "COMPLETED" && item.responseText?.trim());
+    if (candidates.length === 0) {
+      throw new Error("Run has no completed results with stored responses.");
+    }
+
+    let nextIndex = 0;
+    const concurrency = Math.max(1, Number(process.env.BENCHMARK_MODEL_CONCURRENCY ?? 2));
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, candidates.length) }, async () => {
+        while (nextIndex < candidates.length) {
+          const result = candidates[nextIndex];
+          nextIndex += 1;
+          await benchmarkStore.reevaluateResultWithConfig(runId, result.id, config, evaluatorId);
+        }
+      }),
+    );
+
+    await benchmarkStore.flush(runId);
+    return benchmarkStore.getRun(runId) as TestRun;
+  },
+
+  async getEvaluationHistory(resultId: string): Promise<EvaluationHistoryEntry[]> {
+    return loadEvaluationHistory(resultId);
   },
 
   async addEvaluator(input: {

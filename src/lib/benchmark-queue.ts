@@ -1,6 +1,7 @@
-import { evaluateModelResponse, EvaluatorRequestError } from "@/lib/frontier-evaluator";
+import { evaluateModelResponse, resolveEvaluationMode } from "@/lib/frontier-evaluator";
 import { benchmarkStore } from "@/lib/benchmark-store";
-import { OllamaRequestError, streamOllamaChat } from "@/lib/ollama-client";
+import { streamOllamaChat } from "@/lib/ollama-client";
+import { retryTransient, isTransient } from "@/lib/retry";
 import type { Queue as BullQueue } from "bullmq";
 import { redisConnection } from "@/lib/redis-connection";
 
@@ -190,13 +191,7 @@ async function executeModel(runId: string, resultId: string) {
             responseText: currentResult?.responseText ?? "",
             modelName: result.modelName,
             signal: latestRun.cancelController.signal,
-            mode: latestRun.attackType?.startsWith("PURPLE_")
-              ? "purple"
-              : latestRun.attackType?.startsWith("SECOPS_")
-                ? "secops"
-                : latestRun.category === "SECURITY"
-                  ? "security"
-                  : "quality",
+            mode: resolveEvaluationMode(latestRun.category, latestRun.attackType),
           }),
           latestRun.cancelController.signal,
           3,
@@ -270,42 +265,6 @@ function aggregateTelemetry(turns: Array<{
 function sumNullable(values: Array<number | null>) {
   if (values.every((value) => value === null)) return null;
   return values.reduce<number>((total, value) => total + (value ?? 0), 0);
-}
-
-async function retryTransient<T>(
-  operation: () => Promise<T>,
-  signal: AbortSignal,
-  maxAttempts = 3,
-  retryable: (error: unknown) => boolean = isTransient,
-): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (signal.aborted || !retryable(error) || attempt === maxAttempts) throw error;
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(resolve, 250 * 2 ** (attempt - 1));
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timeout);
-            reject(signal.reason);
-          },
-          { once: true },
-        );
-      });
-    }
-  }
-  throw lastError;
-}
-
-function isTransient(error: unknown) {
-  if (error instanceof OllamaRequestError || error instanceof EvaluatorRequestError) {
-    return error.status >= 500 || error.status === 429;
-  }
-  return error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError");
 }
 
 export { executeBenchmark };

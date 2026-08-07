@@ -318,6 +318,15 @@ const purpleJudgeResponseSchema = z.object({
   verdict_summary: z.string(),
 });
 
+export type EvaluationMode = "quality" | "security" | "secops" | "purple";
+
+export function resolveEvaluationMode(category: string, attackType: string | null): EvaluationMode {
+  if (attackType?.startsWith("PURPLE_")) return "purple";
+  if (attackType?.startsWith("SECOPS_")) return "secops";
+  if (category === "SECURITY") return "security";
+  return "quality";
+}
+
 export async function evaluateModelResponse({
   config,
   systemPrompt,
@@ -333,7 +342,7 @@ export async function evaluateModelResponse({
   responseText: string;
   modelName: string;
   signal: AbortSignal;
-  mode?: "quality" | "security" | "secops" | "purple";
+  mode?: EvaluationMode;
 }): Promise<Evaluation> {
   const endpoint = resolveChatCompletionsEndpoint(config.baseUrl);
   const isSecurity = mode === "security";

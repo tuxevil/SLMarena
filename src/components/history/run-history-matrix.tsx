@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { HumanStatus, ModelResult, TestRun } from "@/lib/contracts";
+import type { EvaluatorEntry, HumanStatus, ModelResult, TestRun } from "@/lib/contracts";
 import { ModelGroupedResultsList, type ConsolidatedItem } from "@/components/history/model-grouped-results";
 
 interface RunHistoryMatrixProps {
@@ -22,6 +22,7 @@ interface RunHistoryMatrixProps {
   onPauseRun?: (runId: string) => Promise<void>;
   onResumeRun?: (runId: string) => Promise<void>;
   onCancelRun?: (runId: string) => Promise<void>;
+  onReevaluateRun?: (runId: string, evaluatorId: string) => Promise<void>;
 }
 
 export function RunHistoryMatrix({
@@ -42,11 +43,17 @@ export function RunHistoryMatrix({
   onPauseRun,
   onResumeRun,
   onCancelRun,
+  onReevaluateRun,
 }: RunHistoryMatrixProps) {
   const [viewMode, setViewMode] = useState<"grouped" | "runs">("grouped");
   const [expandedRunIds, setExpandedRunIds] = useState<string[]>([]);
   const [selectedResultForReview, setSelectedResultForReview] = useState<ModelResult | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
+  const [reevalTargetRunId, setReevalTargetRunId] = useState<string | null>(null);
+  const [reevalEvaluators, setReevalEvaluators] = useState<EvaluatorEntry[]>([]);
+  const [reevalSelectedId, setReevalSelectedId] = useState("");
+  const [reevalBusy, setReevalBusy] = useState(false);
+  const [reevalError, setReevalError] = useState<string | null>(null);
 
   // Build consolidated items across active run & history for Grouped View
   const consolidatedItems: ConsolidatedItem[] = [];
@@ -97,6 +104,36 @@ export function RunHistoryMatrix({
     await onHumanReview(selectedResultForReview.id, status, reviewNotes);
     setSelectedResultForReview(null);
     setReviewNotes("");
+  };
+
+  const openReevaluateModal = async (runId: string) => {
+    setReevalTargetRunId(runId);
+    setReevalError(null);
+    setReevalSelectedId("");
+    try {
+      const res = await fetch("/api/settings");
+      if (!res.ok) throw new Error("Could not load evaluators.");
+      const payload = (await res.json()) as { settings?: { evaluators?: EvaluatorEntry[]; activeEvaluatorId?: string | null } };
+      const entries = payload.settings?.evaluators ?? [];
+      setReevalEvaluators(entries);
+      setReevalSelectedId(payload.settings?.activeEvaluatorId ?? entries[0]?.id ?? "");
+    } catch (err) {
+      setReevalError(err instanceof Error ? err.message : "Could not load evaluators.");
+    }
+  };
+
+  const handleReevaluateRun = async () => {
+    if (!reevalTargetRunId || !reevalSelectedId || !onReevaluateRun) return;
+    setReevalBusy(true);
+    setReevalError(null);
+    try {
+      await onReevaluateRun(reevalTargetRunId, reevalSelectedId);
+      setReevalTargetRunId(null);
+    } catch (err) {
+      setReevalError(err instanceof Error ? err.message : "Re-evaluation failed.");
+    } finally {
+      setReevalBusy(false);
+    }
   };
 
   return (
@@ -299,6 +336,16 @@ export function RunHistoryMatrix({
                         >
                           👁️ Side-by-Side
                         </button>
+                        {onReevaluateRun && (
+                          <button
+                            type="button"
+                            className="btn-reevaluate"
+                            onClick={() => openReevaluateModal(run.id)}
+                            title="Re-evaluate all completed samples with another judge (no re-inference)"
+                          >
+                            ⚖️ Re-evaluate
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -418,6 +465,54 @@ export function RunHistoryMatrix({
                 type="button"
                 className="btn-ghost"
                 onClick={() => setSelectedResultForReview(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Re-evaluate Run Modal */}
+      {reevalTargetRunId && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>⚖️ Re-evaluate Run</h3>
+            <p>
+              Run <strong>#{reevalTargetRunId.slice(0, 8)}</strong>: re-evaluates all completed
+              samples with another judge. Stored responses are reused (no re-inference).
+            </p>
+            {reevalEvaluators.length > 0 ? (
+              <select
+                className="styled-select"
+                value={reevalSelectedId}
+                onChange={(e) => setReevalSelectedId(e.target.value)}
+                disabled={reevalBusy}
+              >
+                {reevalEvaluators.map((evaluator) => (
+                  <option key={evaluator.id} value={evaluator.id}>
+                    {evaluator.label} ({evaluator.model})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="reevaluate-error">No evaluators registered in the catalog.</p>
+            )}
+            {reevalError && <p className="reevaluate-error">{reevalError}</p>}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-action approve"
+                onClick={handleReevaluateRun}
+                disabled={reevalBusy || !reevalSelectedId || reevalEvaluators.length === 0}
+              >
+                {reevalBusy ? "⏳ Re-evaluating..." : "🔄 Re-evaluate"}
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setReevalTargetRunId(null)}
+                disabled={reevalBusy}
               >
                 Cancel
               </button>

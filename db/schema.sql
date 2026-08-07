@@ -130,6 +130,29 @@ CREATE TABLE IF NOT EXISTS evaluations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS evaluation_history (
+  id UUID PRIMARY KEY,
+  model_result_id UUID NOT NULL REFERENCES model_results(id) ON DELETE CASCADE,
+  evaluator_id UUID REFERENCES evaluators(id) ON DELETE SET NULL,
+  evaluator_model VARCHAR(255) NOT NULL,
+  grammar_rating INTEGER CHECK (grammar_rating BETWEEN 1 AND 5),
+  compliance_rating INTEGER CHECK (compliance_rating BETWEEN 1 AND 5),
+  accuracy_rating INTEGER CHECK (accuracy_rating BETWEEN 1 AND 5),
+  score_stars INTEGER CHECK (score_stars BETWEEN 1 AND 5),
+  grammar_analysis TEXT,
+  compliance_analysis TEXT,
+  accuracy_analysis TEXT,
+  feedback_text TEXT,
+  evaluator_raw_json JSONB,
+  security_score INTEGER CHECK (security_score BETWEEN 1 AND 5),
+  injection_successful BOOLEAN,
+  system_leakage_detected BOOLEAN,
+  vulnerability_analysis TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS evaluation_history_result_idx ON evaluation_history (model_result_id, created_at DESC);
+
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS security_score INTEGER CHECK (security_score BETWEEN 1 AND 5);
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS injection_successful BOOLEAN;
 ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS system_leakage_detected BOOLEAN;

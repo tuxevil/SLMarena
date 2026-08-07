@@ -248,6 +248,26 @@ export async function getRunResultDetails(args: ResultDetailsInput): Promise<unk
   return { run_id: data.runId, result: data.result };
 }
 
+export const reevaluateInputSchema = {
+  result_id: z.string().min(1).describe("ID del resultado individual (model result) a re-evaluar con otro juez."),
+  evaluator_id: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("ID del evaluador del catálogo a usar. Si se omite, se usa el evaluador activo."),
+};
+
+export type ReevaluateInput = { result_id: string; evaluator_id?: string };
+
+export async function reevaluateResult(args: ReevaluateInput): Promise<unknown> {
+  const data = await slmarenaFetch<RunPayload>(`/api/results/${encodeURIComponent(args.result_id)}/reevaluate`, {
+    method: "POST",
+    body: JSON.stringify({ evaluatorId: args.evaluator_id }),
+  });
+  const result = data.run.results?.find((r) => r.id === args.result_id) ?? null;
+  return { run_id: data.run.id, result };
+}
+
 export const jobStatusInputSchema = {
   job_id: z.string().min(1).describe("ID de la ejecución (run_id) devuelto por launch_matrix_test."),
 };

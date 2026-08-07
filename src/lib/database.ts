@@ -1,6 +1,7 @@
 import postgres, { type TransactionSql } from "postgres";
 import { createHash } from "node:crypto";
 import type {
+  Evaluation,
   EvaluatorConfig,
   EvaluatorEntry,
   AppSettings,
@@ -16,10 +17,12 @@ import type {
 } from "@/lib/contracts";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 import {
+  sqliteAppendEvaluationHistory,
   sqliteDeleteEvaluator,
   sqliteDeleteResult,
   sqliteDeleteScenario,
   sqliteListEvaluators,
+  sqliteLoadEvaluationHistory,
   sqliteLoadEvaluatorKey,
   sqliteLoadSettings,
   sqliteLoadState,
@@ -582,6 +585,48 @@ export async function deletePersistedResult(runId: string, resultId: string): Pr
     RETURNING id
   `;
   return Boolean(deleted);
+}
+
+export async function appendEvaluationHistory(resultId: string, evaluation: Evaluation, evaluatorId: string | null) {
+  if (!isPostgres()) {
+    sqliteAppendEvaluationHistory(resultId, evaluation, evaluatorId);
+    return;
+  }
+  await getClient()!`
+    INSERT INTO evaluation_history (id, model_result_id, evaluator_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, security_score, injection_successful, system_leakage_detected, vulnerability_analysis, evaluator_raw_json, created_at)
+    VALUES (${crypto.randomUUID()}, ${resultId}, ${evaluatorId}, ${evaluation.evaluatorModel}, ${evaluation.grammarRating}, ${evaluation.complianceRating}, ${evaluation.accuracyRating}, ${evaluation.scoreStars}, ${evaluation.grammarAnalysis}, ${evaluation.complianceAnalysis}, ${evaluation.accuracyAnalysis}, ${evaluation.feedbackText}, ${evaluation.securityScore ?? null}, ${evaluation.injectionSuccessful ?? null}, ${evaluation.systemLeakageDetected ?? null}, ${evaluation.vulnerabilityAnalysis ?? null}, ${JSON.stringify(evaluation.rawJson)}::jsonb, CURRENT_TIMESTAMP)
+  `;
+}
+
+export async function loadEvaluationHistory(resultId: string) {
+  if (!isPostgres()) {
+    return sqliteLoadEvaluationHistory(resultId);
+  }
+  const rows = await getClient()!`
+    SELECT id, evaluator_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, security_score, injection_successful, system_leakage_detected, vulnerability_analysis, evaluator_raw_json, created_at
+    FROM evaluation_history
+    WHERE model_result_id = ${resultId}
+    ORDER BY created_at DESC, id DESC
+  `;
+  return rows.map((row) => ({
+    id: String(row.id),
+    evaluatorId: row.evaluator_id ? String(row.evaluator_id) : null,
+    evaluatorModel: String(row.evaluator_model),
+    grammarRating: numberOrNull(row.grammar_rating),
+    complianceRating: numberOrNull(row.compliance_rating),
+    accuracyRating: numberOrNull(row.accuracy_rating),
+    scoreStars: numberOrNull(row.score_stars),
+    grammarAnalysis: row.grammar_analysis ? String(row.grammar_analysis) : null,
+    complianceAnalysis: row.compliance_analysis ? String(row.compliance_analysis) : null,
+    accuracyAnalysis: row.accuracy_analysis ? String(row.accuracy_analysis) : null,
+    feedbackText: String(row.feedback_text ?? ""),
+    securityScore: numberOrNull(row.security_score),
+    injectionSuccessful: row.injection_successful !== null && row.injection_successful !== undefined ? Boolean(row.injection_successful) : null,
+    systemLeakageDetected: row.system_leakage_detected !== null && row.system_leakage_detected !== undefined ? Boolean(row.system_leakage_detected) : null,
+    vulnerabilityAnalysis: row.vulnerability_analysis ? String(row.vulnerability_analysis) : null,
+    rawJson: capStoredJson(row.evaluator_raw_json),
+    createdAt: dateToIso(row.created_at),
+  }));
 }
 
 export async function loadPersistedSettings(): Promise<PersistedSettings | null> {

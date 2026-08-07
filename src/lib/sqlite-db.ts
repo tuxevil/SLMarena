@@ -138,6 +138,28 @@ function initSqliteTables(db: Database.Database) {
       created_at TEXT NOT NULL,
       FOREIGN KEY(model_result_id) REFERENCES model_results(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS evaluation_history (
+      id TEXT PRIMARY KEY,
+      model_result_id TEXT NOT NULL,
+      evaluator_id TEXT,
+      evaluator_model TEXT NOT NULL,
+      grammar_rating INTEGER,
+      compliance_rating INTEGER,
+      accuracy_rating INTEGER,
+      score_stars INTEGER,
+      grammar_analysis TEXT,
+      compliance_analysis TEXT,
+      accuracy_analysis TEXT,
+      feedback_text TEXT,
+      security_score INTEGER,
+      injection_successful INTEGER,
+      system_leakage_detected INTEGER,
+      vulnerability_analysis TEXT,
+      evaluator_raw_json TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(model_result_id) REFERENCES model_results(id) ON DELETE CASCADE
+    );
   `  );
 
   const migrationDb = getSqliteDb();
@@ -359,6 +381,71 @@ export function sqliteDeleteResult(runId: string, resultId: string): boolean {
     .prepare("DELETE FROM model_results WHERE id = ? AND test_run_id = ?")
     .run(resultId, runId);
   return result.changes > 0;
+}
+
+export function sqliteAppendEvaluationHistory(
+  resultId: string,
+  evaluation: Evaluation,
+  evaluatorId: string | null,
+) {
+  getSqliteDb().prepare(`
+    INSERT INTO evaluation_history (id, model_result_id, evaluator_id, evaluator_model, grammar_rating, compliance_rating, accuracy_rating, score_stars, grammar_analysis, compliance_analysis, accuracy_analysis, feedback_text, security_score, injection_successful, system_leakage_detected, vulnerability_analysis, evaluator_raw_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    crypto.randomUUID(),
+    resultId,
+    evaluatorId,
+    evaluation.evaluatorModel,
+    evaluation.grammarRating,
+    evaluation.complianceRating,
+    evaluation.accuracyRating,
+    evaluation.scoreStars,
+    evaluation.grammarAnalysis,
+    evaluation.complianceAnalysis,
+    evaluation.accuracyAnalysis,
+    evaluation.feedbackText,
+    evaluation.securityScore ?? null,
+    evaluation.injectionSuccessful === null || evaluation.injectionSuccessful === undefined
+      ? null
+      : evaluation.injectionSuccessful
+        ? 1
+        : 0,
+    evaluation.systemLeakageDetected === null || evaluation.systemLeakageDetected === undefined
+      ? null
+      : evaluation.systemLeakageDetected
+        ? 1
+        : 0,
+    evaluation.vulnerabilityAnalysis ?? null,
+    JSON.stringify(evaluation.rawJson),
+    new Date().toISOString(),
+  );
+}
+
+export function sqliteLoadEvaluationHistory(resultId: string) {
+  const rows = getSqliteDb()
+    .prepare(
+      "SELECT * FROM evaluation_history WHERE model_result_id = ? ORDER BY created_at DESC, id DESC",
+    )
+    .all(resultId) as SqlRow[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    evaluatorId: row.evaluator_id ? String(row.evaluator_id) : null,
+    evaluatorModel: String(row.evaluator_model),
+    grammarRating: row.grammar_rating !== null ? Number(row.grammar_rating) : null,
+    complianceRating: row.compliance_rating !== null ? Number(row.compliance_rating) : null,
+    accuracyRating: row.accuracy_rating !== null ? Number(row.accuracy_rating) : null,
+    scoreStars: row.score_stars !== null ? Number(row.score_stars) : null,
+    grammarAnalysis: row.grammar_analysis ? String(row.grammar_analysis) : null,
+    complianceAnalysis: row.compliance_analysis ? String(row.compliance_analysis) : null,
+    accuracyAnalysis: row.accuracy_analysis ? String(row.accuracy_analysis) : null,
+    feedbackText: String(row.feedback_text || ""),
+    securityScore: row.security_score !== null && row.security_score !== undefined ? Number(row.security_score) : null,
+    injectionSuccessful: row.injection_successful !== null && row.injection_successful !== undefined ? Boolean(row.injection_successful) : null,
+    systemLeakageDetected: row.system_leakage_detected !== null && row.system_leakage_detected !== undefined ? Boolean(row.system_leakage_detected) : null,
+    vulnerabilityAnalysis: row.vulnerability_analysis ? String(row.vulnerability_analysis) : null,
+    rawJson: safeJsonParse(row.evaluator_raw_json),
+    createdAt: String(row.created_at),
+  }));
 }
 
 export function sqliteListEvaluators(): EvaluatorEntry[] {

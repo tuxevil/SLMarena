@@ -238,6 +238,17 @@ EVALUATOR_API_KEY=your-api-key-here
 
 The **active** evaluator (`active_evaluator_id`) is the one used to judge benchmark responses; per-run overrides via the API remain supported.
 
+### Re-evaluating stored responses
+
+Already-run benchmark responses (persisted `model_results.response_text`) can be **re-evaluated with another judge without re-running inference**:
+
+- **Per result:** the Test Inspector drawer (Verdict tab) offers a *Re-evaluate* action with an evaluator dropdown.
+- **Per run:** the Run History accordion has a *Re-evaluate* action that re-judges every completed sample of the run.
+- **Via API:** `POST /api/results/:id/reevaluate` and `POST /api/runs/:id/reevaluate` with an optional `{ "evaluatorId": "..." }` body (defaults to the active evaluator).
+- **Via MCP:** the `re_evaluate_result` tool.
+
+Re-evaluation replaces the **current verdict** (so leaderboard and analysis reflect the new judge) while appending every prior verdict to the **`evaluation_history`** table, visible as *Evaluation History* in the inspector. A failed judge call leaves the existing verdict untouched.
+
 ## Durable PostgreSQL and Redis Setup
 
 For multi-user or background worker processing:
@@ -335,7 +346,9 @@ For multi-user or background worker processing:
 | `POST` | `/api/runs/:id/pause` | Pause execution of a queued or running benchmark. |
 | `POST` | `/api/runs/:id/resume` | Resume execution of a paused benchmark. |
 | `POST` | `/api/runs/:id/cancel` | Cancel execution of an active or pending benchmark. |
-| `GET`, `DELETE` | `/api/runs/:id/results/:resultId` | Fetch or delete a single model sample result from a run. |
+| `GET`, `DELETE` | `/api/runs/:id/results/:resultId` | Fetch or delete a single model sample result from a run (`?includeHistory=true` also returns its `evaluationHistory`). |
+| `POST` | `/api/results/:id/reevaluate` | Re-evaluate a stored response with another judge (`{ "evaluatorId"?: string }`; defaults to active). No re-inference. |
+| `POST` | `/api/runs/:id/reevaluate` | Re-evaluate every completed sample of a run with another judge. |
 | `GET` | `/api/ollama/models` | Discover installed models (`/api/tags`) & active VRAM models (`/api/ps`) from target Ollama instance. |
 | `GET` | `/api/analysis` | Retrieve aggregated scenario metrics across runs. |
 | `GET` | `/api/leaderboard` | Query Arena Leaderboard statistics with custom dynamic weights and filters. |
@@ -376,6 +389,7 @@ The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `h
 | `pause_run` / `resume_run` / `cancel_run` | Pause, resume, or cancel a queued/running benchmark run. |
 | `get_settings` / `update_settings` | Read or update app settings (Ollama URL, active evaluator selection, default hyper-parameters). |
 | `add_evaluator` / `update_evaluator` / `delete_evaluator` | Manage the evaluator catalog (label, base URL, model, API key, make active). |
+| `re_evaluate_result` | Re-judge a stored response with a catalog evaluator (no re-inference); replaces the current verdict and keeps history. |
 | `get_analysis` | Aggregate a scenario's performance across all evaluated models (per-model samples, avg stars, ASR). |
 | `review_result` | Override the judge verdict with a human review (APPROVED/REJECTED/REVIEWED/UNREVIEWED) and notes. |
 | `get_run_result_details` | Fetch one individual model result of a run (turns, telemetry, judge evaluation). |
@@ -393,9 +407,10 @@ The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `h
 
 Runs, model results, per-turn telemetry, evaluator verdicts, scenarios, and application settings are persisted across restarts in either storage engine:
 
-- **Local mode (default):** Single-file SQLite database via Better-SQLite3 (`SQLITE_PATH`, default `./compare.db`) in WAL mode. The schema — `app_settings`, `evaluators`, `scenarios`, `test_runs`, `model_results`, `model_result_turns`, `evaluations` — is created and migrated automatically on first access (`src/lib/sqlite-db.ts`).
+- **Local mode (default):** Single-file SQLite database via Better-SQLite3 (`SQLITE_PATH`, default `./compare.db`) in WAL mode. The schema — `app_settings`, `evaluators`, `scenarios`, `test_runs`, `model_results`, `model_result_turns`, `evaluations`, `evaluation_history` — is created and migrated automatically on first access (`src/lib/sqlite-db.ts`).
 - **Durable mode:** PostgreSQL (`DATABASE_URL`) with the same schema defined in `db/schema.sql`, applied with `npm run db:migrate` via `psql`. Lists and parameter objects are stored as JSONB, and a monotonic `control_version` guards against out-of-order writes from the concurrent worker.
 - **Evaluator catalog:** Multiple evaluator models can be registered (each with its own base URL, model name, and optional API key). Exactly one is marked **active** (`active_evaluator_id`) and is the one used to judge benchmark responses; per-run overrides via the API remain supported. On first startup, legacy `EVALUATOR_*` config is seeded into the catalog and activated.
+- **Evaluation history:** Every re-evaluation of a stored response appends the verdict to `evaluation_history` (judge used, scores, feedback, timestamp), while `evaluations` keeps the current verdict used by leaderboard and analysis.
 - **Secrets:** Evaluator API keys are encrypted at rest with AES-256-GCM (`APP_ENCRYPTION_KEY`) — they are stored as `api_key_encrypted` per evaluator and never returned by the API; only a `apiKeyConfigured` boolean is exposed.
 - **Human audit trail:** Each model result carries a review status (`UNREVIEWED`, `REVIEWED`, `APPROVED`, `REJECTED`) and optional reviewer notes via `/api/results/:id/review`.
 

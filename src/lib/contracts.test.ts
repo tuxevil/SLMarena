@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRunSchema, evaluatorUpdateSchema, evaluatorUpsertSchema, securityAttackTypeSchema, settingsUpdateSchema } from "./contracts";
+import { createRunSchema, evaluatorUpdateSchema, evaluatorUpsertSchema, reevaluateSchema, securityAttackTypeSchema, settingsUpdateSchema } from "./contracts";
 import { SECURITY_TEMPLATES } from "./security-templates";
 
 describe("settingsUpdateSchema", () => {
@@ -81,6 +81,31 @@ describe("evaluatorUpdateSchema", () => {
     const parsedMakeActive = evaluatorUpdateSchema.safeParse({ makeActive: true });
     expect(parsedMakeActive.success).toBe(true);
     expect(parsedMakeActive.data?.makeActive).toBe(true);
+  });
+});
+
+describe("reevaluateSchema", () => {
+  it("accepts an empty body (defaults to the active evaluator)", () => {
+    const parsed = reevaluateSchema.safeParse({});
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.evaluatorId).toBeUndefined();
+  });
+
+  it("accepts an explicit evaluator id", () => {
+    const parsed = reevaluateSchema.safeParse({ evaluatorId: "ev-1" });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.evaluatorId).toBe("ev-1");
+  });
+
+  it("accepts a null evaluator id", () => {
+    const parsed = reevaluateSchema.safeParse({ evaluatorId: null });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.evaluatorId).toBeNull();
+  });
+
+  it("rejects non-string evaluator ids", () => {
+    const parsed = reevaluateSchema.safeParse({ evaluatorId: 42 });
+    expect(parsed.success).toBe(false);
   });
 });
 

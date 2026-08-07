@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { benchmarkStore } from "@/lib/benchmark-store";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string; resultId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string; resultId: string }> }) {
   await benchmarkStore.hydrate();
   const { id, resultId } = await params;
   const run = benchmarkStore.getStoredRun(id);
@@ -9,7 +9,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const result = run.results.find((item) => item.id === resultId);
   if (!result) return NextResponse.json({ error: "Result not found." }, { status: 404 });
-  return NextResponse.json({ runId: run.id, result });
+
+  const includeHistory = new URL(request.url).searchParams.get("includeHistory") === "true";
+  const evaluationHistory = includeHistory ? await benchmarkStore.getEvaluationHistory(resultId) : undefined;
+  return NextResponse.json({ runId: run.id, result, evaluationHistory });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string; resultId: string }> }) {
