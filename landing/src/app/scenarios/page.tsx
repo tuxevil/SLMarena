@@ -39,7 +39,15 @@ export default function ScenariosPage() {
       <ExportSection snapshot={data} />
       <footer className="site-footer">
         SLMarena · scenario suite public by design · judge{" "}
-        {data.global_stats.default_evaluator_model} · no server required.
+        {data.global_stats.default_evaluator_model} ·{" "}
+        <a
+          className="footer-link"
+          href="https://github.com/tuxevil/SLMarena"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          github.com/tuxevil/SLMarena ↗
+        </a>
       </footer>
     </div>
   );

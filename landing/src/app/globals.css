@@ -203,6 +203,26 @@ code,
   white-space: nowrap;
 }
 
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-repo {
+  text-decoration: none;
+  background: var(--surface-raised);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.btn-repo:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 20px rgb(99 102 241 / 20%);
+}
+
 /* ---------- Hardware rig card ---------- */
 
 .rig-card {
@@ -1332,6 +1352,15 @@ code,
   color: var(--muted);
   font-size: 0.72rem;
   text-align: center;
+}
+
+.footer-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.footer-link:hover {
+  text-decoration: underline;
 }
 
 /* ---------- Responsive ---------- */

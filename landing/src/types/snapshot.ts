@@ -16,6 +16,7 @@ export interface PublicSnapshot {
   hardware_rig: {
     cpu: string;
     ram: string;
+    gpu?: string;
     provider: string;
   };
   global_stats: {

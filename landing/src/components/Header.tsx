@@ -46,6 +46,17 @@ export function Header({ snapshot }: HeaderProps) {
         </span>
       </div>
 
+      <div className="hero-actions">
+        <a
+          className="btn-export btn-repo"
+          href="https://github.com/tuxevil/SLMarena"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          GitHub Repo ↗
+        </a>
+      </div>
+
       <div className="rig-card" title="Benchmark execution environment">
         <span className="rig-icon" aria-hidden="true">
           🖥️
@@ -54,6 +65,7 @@ export function Header({ snapshot }: HeaderProps) {
           <span className="rig-label">Hardware Rig</span>
           <span className="rig-value">
             {rig.cpu} / {rig.ram}
+            {rig.gpu ? ` / ${rig.gpu}` : ""}
           </span>
           <span className="rig-provider">{rig.provider}</span>
         </div>

@@ -24,7 +24,8 @@
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { loadPersistedState } from "@/lib/database";
+import { loadEnvConfig } from "@next/env";
+import { isPostgres, loadPersistedState } from "@/lib/database";
 import { getSqliteDb } from "@/lib/sqlite-db";
 import type {
   PublicModelSummary,
@@ -53,7 +54,6 @@ const LEAK_MARKERS = [
   "rawJson",
   "api.openai.com",
   "10.128.128.254",
-  "sk-",
 ];
 
 function bucketFor(attackType: string | null): CategoryBucket | null {
@@ -181,11 +181,13 @@ function stableId(seed: string) {
 }
 
 function main() {
+  loadEnvConfig(process.cwd());
   const outputPath =
     process.env.SNAPSHOT_OUTPUT?.trim() || path.join(process.cwd(), "landing/public/data/public-snapshot.json");
   const rig = {
     cpu: process.env.SNAPSHOT_CPU?.trim() || "AMD Ryzen 9 7945HX",
-    ram: process.env.SNAPSHOT_RAM?.trim() || "64GB DDR5",
+    ram: process.env.SNAPSHOT_RAM?.trim() || "96GB DDR5 RAM",
+    gpu: process.env.SNAPSHOT_GPU?.trim() || "NVIDIA Quadro RTX 4000 8GB VRAM",
     provider: process.env.SNAPSHOT_PROVIDER?.trim() || "Local Ollama Inference",
   };
 
@@ -205,7 +207,8 @@ function main() {
       writeFileSync(outputPath, `${json}\n`, "utf8");
       console.log(`[export-public-snapshot] Wrote ${outputPath}`);
       console.log(
-        `[export-public-snapshot] ${snapshot.models.length} models, ${snapshot.scenarios.length} scenarios, ` +
+        `[export-public-snapshot] Source: ${isPostgres() ? "PostgreSQL" : "SQLite (compare.db)"} | ` +
+          `${snapshot.models.length} models, ${snapshot.scenarios.length} scenarios, ` +
           `${snapshot.global_stats.total_benchmarks} benchmark runs, generated ${snapshot.generated_at}`,
       );
     })

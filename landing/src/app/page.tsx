@@ -67,8 +67,15 @@ export default function HomePage() {
       <ExportSection snapshot={data} />
       <footer className="site-footer">
         SLMarena · static snapshot {data.generated_at} · judge{" "}
-        {data.global_stats.default_evaluator_model} · deployed as pure HTML/CSS/JS — no server,
-        no API, no database at runtime.
+        {data.global_stats.default_evaluator_model} ·{" "}
+        <a
+          className="footer-link"
+          href="https://github.com/tuxevil/SLMarena"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          github.com/tuxevil/SLMarena ↗
+        </a>
       </footer>
       <ModelProfileModal model={profileModel} onClose={() => setProfileModel(null)} />
     </div>
