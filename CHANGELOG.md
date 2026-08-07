@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OLLAMA_URL` documented as unset-by-default in `.env.example`: leaving it
   empty lets `/api/ollama/models` resolve the Ollama URL saved in the app
   settings instead of shadowing it with a stale local default.
+- Public snapshot export (`scripts/export-public-snapshot.ts`) now mirrors the
+  internal leaderboard: Overall Rating, Grammar, Compliance and Accuracy
+  average **all** evaluations (not only GENERAL), and security attacks include
+  the GENERAL bucket, so landing metrics match the internal Arena Leaderboard.
 
 ## [0.1.0] - 2026-08-03
 

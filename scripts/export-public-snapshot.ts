@@ -63,6 +63,15 @@ function bucketFor(attackType: string | null): CategoryBucket | null {
   return "RED_TEAM";
 }
 
+function allOf(bucket: ModelBucket, metric: "stars" | "grammar" | "compliance" | "accuracy") {
+  return [
+    ...bucket.buckets.GENERAL[metric],
+    ...bucket.buckets.RED_TEAM[metric],
+    ...bucket.buckets.BLUE_TEAM[metric],
+    ...bucket.buckets.PURPLE_TEAM[metric],
+  ];
+}
+
 function average(values: number[]) {
   if (values.length === 0) return null;
   return Number((values.reduce((sum, v) => sum + v, 0) / values.length).toFixed(2));
@@ -272,11 +281,11 @@ function buildSnapshot(
         if (ev.grammarRating != null) cb.grammar.push(ev.grammarRating);
         if (ev.complianceRating != null) cb.compliance.push(ev.complianceRating);
         if (ev.accuracyRating != null) cb.accuracy.push(ev.accuracyRating);
-        if (ev.securityScore != null || run.category === "SECURITY") {
-          cb.attacks += 1;
-          if (ev.injectionSuccessful || ev.systemLeakageDetected) {
-            cb.failures += 1;
-          }
+      }
+      if (ev?.securityScore != null || run.category === "SECURITY") {
+        cb.attacks += 1;
+        if (ev?.injectionSuccessful || ev?.systemLeakageDetected) {
+          cb.failures += 1;
         }
       }
     }
@@ -288,23 +297,25 @@ function buildSnapshot(
   );
 
   const models: PublicModelSummary[] = [...byModel.values()].map((b) => {
-    const avgStars = average(b.buckets.GENERAL.stars.length ? b.buckets.GENERAL.stars : allStarsOf(b)) ?? 0;
+    const avgStars = average(allOf(b, "stars")) ?? 0;
     const generalStars = average(b.buckets.GENERAL.stars);
     const redAttacks = b.buckets.RED_TEAM.attacks;
     const redFailures = b.buckets.RED_TEAM.failures;
     const redResilience = redAttacks > 0 ? Math.round(100 - (redFailures / redAttacks) * 100) : -1;
     const blueStars = average(b.buckets.BLUE_TEAM.stars);
     const purpleStars = average(b.buckets.PURPLE_TEAM.stars);
-    const secAttacks = b.buckets.RED_TEAM.attacks + b.buckets.BLUE_TEAM.attacks + b.buckets.PURPLE_TEAM.attacks;
-    const secFailures = b.buckets.RED_TEAM.failures + b.buckets.BLUE_TEAM.failures + b.buckets.PURPLE_TEAM.failures;
+    const secAttacks =
+      b.buckets.GENERAL.attacks + b.buckets.RED_TEAM.attacks + b.buckets.BLUE_TEAM.attacks + b.buckets.PURPLE_TEAM.attacks;
+    const secFailures =
+      b.buckets.GENERAL.failures + b.buckets.RED_TEAM.failures + b.buckets.BLUE_TEAM.failures + b.buckets.PURPLE_TEAM.failures;
 
-    const grammar = average(b.buckets.GENERAL.grammar) ?? avgStars;
-    const compliance = average(b.buckets.GENERAL.compliance) ?? avgStars;
-    const accuracy = average(b.buckets.GENERAL.accuracy) ?? avgStars;
+    const grammar = average(allOf(b, "grammar")) ?? avgStars;
+    const compliance = average(allOf(b, "compliance")) ?? avgStars;
+    const accuracy = average(allOf(b, "accuracy")) ?? avgStars;
     const avgTok = average(b.tokPerSecList);
     const avgTtft = average(b.ttftMsList);
     const securityResilience = secAttacks > 0 ? Number((100 - (secFailures / secAttacks) * 100).toFixed(1)) : 100;
-    const avgStarsAll = average(allStarsOf(b));
+    const avgStarsAll = average(allOf(b, "stars"));
 
     const qualityScore = avgStarsAll !== null ? (avgStarsAll / 5) * 100 : 0;
     const securityScore = securityResilience;
@@ -418,15 +429,6 @@ function buildSnapshot(
     models,
     scenarios,
   };
-}
-
-function allStarsOf(bucket: ModelBucket) {
-  return [
-    ...bucket.buckets.GENERAL.stars,
-    ...bucket.buckets.RED_TEAM.stars,
-    ...bucket.buckets.BLUE_TEAM.stars,
-    ...bucket.buckets.PURPLE_TEAM.stars,
-  ];
 }
 
 function parameterSizeValue(modelName: string) {
