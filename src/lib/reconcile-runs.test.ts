@@ -106,8 +106,18 @@ describe("reconcileOrphanedRuns", () => {
     expect(outcome.failed).toEqual([]);
   });
 
-  it("skips runs with a live waiting or active job", async () => {
-    const waitingRun = makeRun({ status: "PENDING" });
+  it("skips paused runs even when their job is missing", async () => {
+    const run = makeRun({ status: "RUNNING", paused: true });
+    mockedLoad.mockResolvedValue({ runs: [{ run, config: { ollamaUrl: "http://localhost:11434" } }], scenarios: [] });
+    stateByJobId.set(`benchmark-${run.id}`, null);
+
+    const outcome = await reconcileOrphanedRuns();
+
+    expect(mockedEnqueue).not.toHaveBeenCalled();
+    expect(outcome.skipped).toEqual([run.id]);
+  });
+
+  it("skips runs with a live waiting or active job", async () => {    const waitingRun = makeRun({ status: "PENDING" });
     const activeRun = makeRun({ status: "RUNNING" });
     mockedLoad.mockResolvedValue({
       runs: [

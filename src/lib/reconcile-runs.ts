@@ -29,6 +29,10 @@ export async function reconcileOrphanedRuns(options: { maxRecoveries?: number } 
 
     const candidates = persisted.runs.filter(({ run }) => run.status === "PENDING" || run.status === "RUNNING");
     for (const { run } of candidates) {
+      if (run.paused) {
+        result.skipped.push(run.id);
+        continue;
+      }
       const jobId = `benchmark-${run.id}`;
       const job = await queue.getJob(jobId);
       const jobState = job ? await job.getState() : null;
