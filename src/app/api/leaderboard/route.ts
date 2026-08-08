@@ -5,6 +5,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const category = url.searchParams.get("category")?.trim() || "ALL";
   const paramRange = url.searchParams.get("paramRange")?.trim() || "All";
+  const difficultyRaw = url.searchParams.get("difficulty")?.trim() || "ALL";
 
   const wqRaw = url.searchParams.get("wq");
   const wsRaw = url.searchParams.get("ws");
@@ -19,6 +20,9 @@ export async function GET(request: Request) {
   const leaderboardData = await aggregateLeaderboard({
     category,
     paramRange,
+    difficulty: ["easy", "medium", "hard"].includes(difficultyRaw)
+      ? (difficultyRaw as "easy" | "medium" | "hard")
+      : "ALL",
     weights,
   });
 

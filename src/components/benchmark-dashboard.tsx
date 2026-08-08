@@ -60,6 +60,7 @@ export function BenchmarkDashboard() {
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null);
   const [leaderboardCategory, setLeaderboardCategory] = useState<"ALL" | "GENERAL" | "SECURITY">("ALL");
   const [leaderboardParamRange, setLeaderboardParamRange] = useState<"All" | "<4B" | "4B-8B" | ">8B">("All");
+  const [leaderboardDifficulty, setLeaderboardDifficulty] = useState<"ALL" | "easy" | "medium" | "hard">("ALL");
   const [weights, setWeights] = useState<LeaderboardWeights>({ quality: 40, security: 40, speed: 20 });
   const [selectedRadarModels, setSelectedRadarModels] = useState<string[]>([]);
 
@@ -143,6 +144,7 @@ export function BenchmarkDashboard() {
     const params = new URLSearchParams({
       category: leaderboardCategory,
       paramRange: leaderboardParamRange,
+      difficulty: leaderboardDifficulty,
       wq: String(weights.quality),
       ws: String(weights.security),
       wv: String(weights.speed),
@@ -159,7 +161,7 @@ export function BenchmarkDashboard() {
         );
       })
       .catch(() => undefined);
-  }, [leaderboardCategory, leaderboardParamRange, weights.quality, weights.security, weights.speed, activeRun?.status, historyRefreshKey]);
+  }, [leaderboardCategory, leaderboardParamRange, leaderboardDifficulty, weights.quality, weights.security, weights.speed, activeRun?.status, historyRefreshKey]);
 
   // Fetch Runs History
   useEffect(() => {
@@ -494,6 +496,8 @@ export function BenchmarkDashboard() {
               onCategoryChange={setLeaderboardCategory}
               paramRange={leaderboardParamRange}
               onParamRangeChange={setLeaderboardParamRange}
+              difficulty={leaderboardDifficulty}
+              onDifficultyChange={setLeaderboardDifficulty}
               weights={weights}
               onWeightChange={(key, val) => setWeights((prev) => ({ ...prev, [key]: val }))}
               selectedRadarModels={selectedRadarModels}

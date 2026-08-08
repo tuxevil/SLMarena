@@ -24,6 +24,12 @@ const CATEGORY_BADGES: Record<PublicScenarioCategory, { label: string; className
   PURPLE_TEAM: { label: "PURPLE_TEAM", className: "cat-badge purple" },
 };
 
+const DIFFICULTY_BADGES: Record<string, { label: string; className: string }> = {
+  easy: { label: "Easy", className: "diff-badge easy" },
+  medium: { label: "Medium", className: "diff-badge medium" },
+  hard: { label: "Hard", className: "diff-badge hard" },
+};
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -51,12 +57,25 @@ function CopyButton({ text }: { text: string }) {
 
 function ScenarioCard({ scenario }: { scenario: PublicScenarioSummary }) {
   const badge = CATEGORY_BADGES[scenario.category];
+  const difficultyBadge = scenario.difficulty ? DIFFICULTY_BADGES[scenario.difficulty] : null;
   return (
     <article className="scenario-card">
       <div className="scenario-header">
         <h3 className="scenario-title">{scenario.title}</h3>
         <div className="scenario-badges">
           <span className={`cat-badge ${badge.className}`}>{badge.label}</span>
+          {difficultyBadge && (
+            <span
+              className={`diff-badge ${difficultyBadge.className}`}
+              title={
+                scenario.pass_rate_pct !== null
+                  ? `Dificultad derivada del pass rate global (${scenario.pass_rate_pct}%)`
+                  : "Dificultad derivada de las estrellas promedio"
+              }
+            >
+              {difficultyBadge.label}
+            </span>
+          )}
           {scenario.attack_vector && (
             <span className="vector-pill">{scenario.attack_vector}</span>
           )}

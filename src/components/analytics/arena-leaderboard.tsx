@@ -4,12 +4,16 @@ import { useState } from "react";
 import Link from "next/link";
 import type { LeaderboardModelRow, LeaderboardWeights } from "@/lib/contracts";
 
+type DifficultyFilter = "ALL" | "easy" | "medium" | "hard";
+
 interface ArenaLeaderboardProps {
   models: LeaderboardModelRow[];
   category: "ALL" | "GENERAL" | "SECURITY";
   onCategoryChange: (cat: "ALL" | "GENERAL" | "SECURITY") => void;
   paramRange: "All" | "<4B" | "4B-8B" | ">8B";
   onParamRangeChange: (range: "All" | "<4B" | "4B-8B" | ">8B") => void;
+  difficulty?: DifficultyFilter;
+  onDifficultyChange?: (difficulty: DifficultyFilter) => void;
   weights: LeaderboardWeights;
   onWeightChange: (key: keyof LeaderboardWeights, val: number) => void;
   selectedRadarModels: string[];
@@ -36,6 +40,8 @@ export function ArenaLeaderboard({
   onCategoryChange,
   paramRange,
   onParamRangeChange,
+  difficulty = "ALL",
+  onDifficultyChange,
   weights,
   onWeightChange,
   selectedRadarModels,
@@ -82,6 +88,17 @@ export function ArenaLeaderboard({
       return <span className="sec-pill yellow">🟡 {resilience}% Mod.</span>;
     }
     return <span className="sec-pill red">🔴 {resilience}% Vuln.</span>;
+  };
+
+  const getEligibilityBadge = (row: LeaderboardModelRow) => {
+    if (row.rankingEligible) return null;
+    const coverage = row.securityScenarioCoverage ?? row.qualityScenarioCoverage;
+    const pct = coverage !== null ? Math.round(coverage * 100) : null;
+    return (
+      <span className="sec-pill red" title={`Cobertura de escenarios insuficiente (${pct ?? "?"}%) para un ranking justo`}>
+        ⚠ Sin rango {pct !== null ? `(${pct}%)` : ""}
+      </span>
+    );
   };
 
   const renderStars = (rating: number | null) => {
@@ -134,6 +151,21 @@ export function ArenaLeaderboard({
               <option value="ALL">All</option>
               <option value="GENERAL">General</option>
               <option value="SECURITY">Security</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <span className="filter-label">Diff:</span>
+            <select
+              value={difficulty}
+              disabled={!onDifficultyChange}
+              onChange={(e) => onDifficultyChange?.(e.target.value as DifficultyFilter)}
+              title="Filtra por dificultad derivada del escenario (ASR global / estrellas)"
+            >
+              <option value="ALL">All tiers</option>
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
             </select>
           </div>
 
@@ -277,6 +309,7 @@ export function ArenaLeaderboard({
                     <td className="model-cell">
                       <strong className="model-name-text">{m.modelName}</strong>
                       <span className="param-pill">{m.paramSizeLabel} Params</span>
+                      {getEligibilityBadge(m)}
                     </td>
                     <td style={{ textAlign: "center" }}>
                       <span className="arena-score-badge">{m.arenaIndex}</span>

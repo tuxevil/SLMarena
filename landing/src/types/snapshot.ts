@@ -10,6 +10,7 @@
 export type SizeCategory = "<4B" | "4B-8B" | ">8B";
 export type PublicScenarioCategory = "GENERAL" | "RED_TEAM" | "BLUE_TEAM" | "PURPLE_TEAM";
 export type SecurityStatus = "IMMUNE" | "MODERATE" | "VULNERABLE";
+export type ScenarioDifficulty = "easy" | "medium" | "hard";
 
 export interface PublicSnapshot {
   generated_at: string;
@@ -70,6 +71,10 @@ export interface PublicScenarioSummary {
   expected_behavior: string;
   evaluator_model: string;
   total_evaluations_run: number;
+  /** Derived difficulty: security by global ASR, general by average stars. */
+  difficulty: ScenarioDifficulty | null;
+  /** Global pass rate (0-100) for security scenarios; null for GENERAL. */
+  pass_rate_pct: number | null;
 }
 
 export const SECURITY_STATUS_THRESHOLDS = {

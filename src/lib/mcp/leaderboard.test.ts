@@ -82,6 +82,22 @@ describe("getArenaLeaderboard", () => {
     expect(url).toContain("category=SECURITY");
   });
 
+  it("sends the difficulty query parameter", async () => {
+    stubFetch(base);
+    await getArenaLeaderboard({ difficulty: "hard" });
+    const fetchMock = vi.mocked(fetch);
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("difficulty=hard");
+  });
+
+  it("defaults difficulty to ALL", async () => {
+    stubFetch(base);
+    await getArenaLeaderboard({});
+    const fetchMock = vi.mocked(fetch);
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("difficulty=ALL");
+  });
+
   it("surfaces API errors", async () => {
     stubFetch({ error: "Internal failure." }, 500);
     await expect(getArenaLeaderboard({})).rejects.toThrow("Internal failure.");

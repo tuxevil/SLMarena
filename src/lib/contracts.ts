@@ -259,6 +259,8 @@ export type LeaderboardWeights = {
   speed: number; // default 20
 };
 
+export type ScenarioDifficulty = "easy" | "medium" | "hard";
+
 export type SecurityRadarMetrics = {
   instructionOverrideResistance: number;
   systemPromptLeakageResistance: number;
@@ -282,6 +284,12 @@ export type LeaderboardModelRow = {
   avgDurationMs: number | null;
   attackSuccessRatePct: number | null;
   securityResilienceScore: number | null;
+  /** Fraction (0..1) of the discriminating security signal the model covered. */
+  securityScenarioCoverage: number | null;
+  /** Fraction (0..1) of the discriminating quality signal the model covered. */
+  qualityScenarioCoverage: number | null;
+  /** False when the model ran too few scenarios to be fairly ranked. */
+  rankingEligible: boolean;
   radar: SecurityRadarMetrics;
   arenaIndex: number;
 };

@@ -15,6 +15,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
   // Filters
   const [category, setCategory] = useState<"ALL" | "GENERAL" | "SECURITY">("ALL");
   const [paramRange, setParamRange] = useState<"All" | "<4B" | "4B-8B" | ">8B">("All");
+  const [difficulty, setDifficulty] = useState<"ALL" | "easy" | "medium" | "hard">("ALL");
 
   // Dynamic Weights for Arena Index
   const [weights, setWeights] = useState<LeaderboardWeights>({
@@ -33,6 +34,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
     const params = new URLSearchParams({
       category,
       paramRange,
+      difficulty,
       wq: String(weights.quality),
       ws: String(weights.security),
       wv: String(weights.speed),
@@ -48,7 +50,7 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
         }
       })
       .catch(() => setLoading(false));
-  }, [category, paramRange, weights.quality, weights.security, weights.speed, activeRun?.status, selectedRadarModels.length]);
+  }, [category, paramRange, difficulty, weights.quality, weights.security, weights.speed, activeRun?.status, selectedRadarModels.length]);
 
   const toggleRadarModel = (modelName: string) => {
     setSelectedRadarModels((prev) =>
@@ -181,6 +183,22 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
                 </button>
               ))}
             </div>
+
+            {/* Difficulty Filter (derived from scenario pass rates) */}
+            <div className="filter-group">
+              <span className="filter-label">Difficulty:</span>
+              {(["ALL", "easy", "medium", "hard"] as const).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setDifficulty(level)}
+                  className={`filter-btn ${difficulty === level ? "active indigo" : ""}`}
+                  type="button"
+                  title="Dificultad derivada del escenario (ASR global para SECURITY, estrellas para GENERAL)"
+                >
+                  {level === "ALL" ? "All" : level}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -294,6 +312,21 @@ export function ConsolidatedDashboard({ activeRun, history }: ConsolidatedDashbo
                       <td style={{ fontWeight: 600, color: "var(--ink)" }}>{m.modelName}</td>
                       <td>
                         <span className="param-badge">{m.paramSizeLabel}</span>
+                        {!m.rankingEligible && (
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              fontSize: "0.7rem",
+                              color: "var(--danger)",
+                              border: "1px solid var(--danger)",
+                              borderRadius: 4,
+                              padding: "1px 5px",
+                            }}
+                            title="Cobertura de escenarios insuficiente para un ranking justo"
+                          >
+                            ⚠ sin rango
+                          </span>
+                        )}
                       </td>
                       <td style={{ fontFamily: "monospace", color: "var(--accent)" }}>
                         {m.avgTokPerSec != null ? `${m.avgTokPerSec} tok/s` : "—"}

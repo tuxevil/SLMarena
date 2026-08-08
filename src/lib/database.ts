@@ -15,6 +15,15 @@ import type {
   SecurityRadarMetrics,
   GlobalKpis,
 } from "@/lib/contracts";
+import {
+  computeDiscriminationWeights,
+  dimensionScoreFor,
+  isRankingEligible,
+  qualityDifficultyFor,
+  securityDifficultyFor,
+  type ScenarioDifficulty,
+  type ScenarioModelStat,
+} from "@/lib/security-scoring";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 import {
   sqliteAppendEvaluationHistory,
@@ -284,6 +293,7 @@ export function extractParamSize(modelName: string): { label: string; value: num
 export async function aggregateLeaderboard(options?: {
   category?: string;
   paramRange?: string;
+  difficulty?: ScenarioDifficulty | "ALL";
   weights?: Partial<LeaderboardWeights>;
 }): Promise<LeaderboardData> {
   const state = await loadPersistedState();
@@ -306,9 +316,48 @@ export async function aggregateLeaderboard(options?: {
     };
   }
 
+  // Difficulty tiers are derived from the unfiltered data so the tier filter
+  // cannot feed back into the tier assignment. SECURITY runs are tiered by the
+  // global ASR of their scenario; GENERAL runs by their own average stars.
+  const runTier = new Map<string, ScenarioDifficulty>();
+  const scenarioTier = new Map<string, ScenarioDifficulty>();
+  {
+    const scenarioSecurity = new Map<string, { attacks: number; failures: number }>();
+    for (const entry of state.runs) {
+      if (entry.run.category !== "SECURITY") continue;
+      const key = scenarioKeyFor(entry.run);
+      for (const res of entry.run.results) {
+        if (res.status !== "COMPLETED" || res.evaluation?.securityScore == null) continue;
+        const bucket = scenarioSecurity.get(key) ?? { attacks: 0, failures: 0 };
+        bucket.attacks += 1;
+        if (res.evaluation.injectionSuccessful || res.evaluation.systemLeakageDetected) bucket.failures += 1;
+        scenarioSecurity.set(key, bucket);
+      }
+    }
+    for (const [key, bucket] of scenarioSecurity) {
+      const asr = bucket.attacks > 0 ? (bucket.failures / bucket.attacks) * 100 : 0;
+      scenarioTier.set(key, securityDifficultyFor(asr));
+    }
+    for (const entry of state.runs) {
+      const run = entry.run;
+      if (run.category === "SECURITY") {
+        runTier.set(run.id, scenarioTier.get(scenarioKeyFor(run)) ?? "easy");
+      } else {
+        const stars = run.results
+          .filter((r) => r.status === "COMPLETED" && r.evalStatus !== "FAILED" && r.evaluation?.scoreStars != null)
+          .map((r) => r.evaluation!.scoreStars!);
+        const avg = stars.length > 0 ? stars.reduce((sum, star) => sum + star, 0) / stars.length : null;
+        runTier.set(run.id, avg !== null ? qualityDifficultyFor(avg) : "easy");
+      }
+    }
+  }
+
   let filteredRuns = state.runs;
   if (options?.category && options.category !== "ALL") {
     filteredRuns = filteredRuns.filter((r) => r.run.category === options.category);
+  }
+  if (options?.difficulty && options.difficulty !== "ALL") {
+    filteredRuns = filteredRuns.filter((r) => runTier.get(r.run.id) === options.difficulty);
   }
 
   // Gather raw data per model
@@ -336,11 +385,26 @@ export async function aggregateLeaderboard(options?: {
   };
 
   const byModel = new Map<string, ModelRawBucket>();
+  const perScenario = new Map<string, Map<string, ScenarioModelStat>>();
   const allTokPerSec: number[] = [];
   const allQualityStars: number[] = [];
   let totalSecurityAttacks = 0;
   let totalSecurityFailures = 0;
   const uniqueRunIds = new Set<string>();
+
+  const scenarioStatFor = (scenarioKey: string, modelName: string): ScenarioModelStat => {
+    let byModelStats = perScenario.get(scenarioKey);
+    if (!byModelStats) {
+      byModelStats = new Map();
+      perScenario.set(scenarioKey, byModelStats);
+    }
+    let stat = byModelStats.get(modelName);
+    if (!stat) {
+      stat = { scenarioKey, modelName, attacks: 0, failures: 0, stars: [] };
+      byModelStats.set(modelName, stat);
+    }
+    return stat;
+  };
 
   for (const entry of filteredRuns) {
     uniqueRunIds.add(entry.run.id);
@@ -396,6 +460,7 @@ export async function aggregateLeaderboard(options?: {
       if (res.evaluation?.scoreStars != null) {
         bucket.qualityStarsList.push(res.evaluation.scoreStars);
         allQualityStars.push(res.evaluation.scoreStars);
+        scenarioStatFor(scenarioKeyFor(entry.run), res.modelName).stars.push(res.evaluation.scoreStars);
       }
       if (res.evaluation?.grammarRating != null) {
         bucket.grammarRatingList.push(res.evaluation.grammarRating);
@@ -415,6 +480,9 @@ export async function aggregateLeaderboard(options?: {
           bucket.securityFailuresTotal += 1;
           totalSecurityFailures += 1;
         }
+        const scenarioStat = scenarioStatFor(scenarioKeyFor(entry.run), res.modelName);
+        scenarioStat.attacks += 1;
+        if (failed) scenarioStat.failures += 1;
 
         const attackType = entry.run.attackType;
         if (
@@ -440,6 +508,14 @@ export async function aggregateLeaderboard(options?: {
     }
   }
 
+  // Scenario-level discrimination weights (see security-scoring.ts). Scenarios
+  // where every model fails or every model passes get weight 0.
+  const scenarioRows: ScenarioModelStat[] = [...perScenario.values()].flatMap((byModelStats) =>
+    [...byModelStats.values()],
+  );
+  const securityWeights = computeDiscriminationWeights(scenarioRows, "security");
+  const qualityWeights = computeDiscriminationWeights(scenarioRows, "quality");
+
   // Calculate max avg speed across models for speed normalization
   let maxAvgSpeed = 1;
   const modelAverages: Array<{
@@ -457,6 +533,10 @@ export async function aggregateLeaderboard(options?: {
     avgDurationMs: number | null;
     asrPercent: number | null;
     securityResilienceScore: number | null;
+    securityScenarioCoverage: number | null;
+    qualityScenarioCoverage: number | null;
+    weightedQualityScore: number | null;
+    rankingEligible: boolean;
     radar: SecurityRadarMetrics;
   }> = [];
 
@@ -476,7 +556,18 @@ export async function aggregateLeaderboard(options?: {
     const asr = bucket.securityAttacksTotal > 0
       ? Number(((bucket.securityFailuresTotal / bucket.securityAttacksTotal) * 100).toFixed(1))
       : null;
-    const securityResilience = asr !== null ? Number((100 - asr).toFixed(1)) : 100;
+
+    // Weighted per-scenario score with coverage, falling back to the raw
+    // sample ratio when the model has no discriminating signal covered.
+    const modelScenarioRows = scenarioRows.filter((row) => row.modelName === bucket.modelName);
+    const securityDimension = dimensionScoreFor(securityWeights, modelScenarioRows, "security");
+    const qualityDimension = dimensionScoreFor(qualityWeights, modelScenarioRows, "quality");
+    const securityResilience =
+      securityDimension.score !== null
+        ? securityDimension.score
+        : asr !== null
+          ? Number((100 - asr).toFixed(1))
+          : 100;
 
     // Radar metrics (0-100)
     const overrideRes = bucket.overrideAttacks > 0
@@ -510,6 +601,10 @@ export async function aggregateLeaderboard(options?: {
       avgDurationMs,
       asrPercent: asr,
       securityResilienceScore: securityResilience,
+      securityScenarioCoverage: securityDimension.coverage,
+      qualityScenarioCoverage: qualityDimension.coverage,
+      weightedQualityScore: qualityDimension.score,
+      rankingEligible: isRankingEligible([securityDimension.coverage, qualityDimension.coverage]),
       radar: {
         instructionOverrideResistance: overrideRes,
         systemPromptLeakageResistance: leakageRes,
@@ -526,7 +621,8 @@ export async function aggregateLeaderboard(options?: {
   const wV = defaultWeights.speed / totalWeight;
 
   const models: LeaderboardModelRow[] = modelAverages.map((m) => {
-    const qualityScore = m.avgQualityStars !== null ? (m.avgQualityStars / 5) * 100 : 0;
+    const qualityScore =
+      m.weightedQualityScore !== null ? m.weightedQualityScore : m.avgQualityStars !== null ? (m.avgQualityStars / 5) * 100 : 0;
     const securityScore = m.securityResilienceScore ?? 100;
     const speedScore = m.avgTokPerSec !== null ? (m.avgTokPerSec / maxAvgSpeed) * 100 : 0;
 
@@ -548,12 +644,21 @@ export async function aggregateLeaderboard(options?: {
       avgDurationMs: m.avgDurationMs,
       attackSuccessRatePct: m.asrPercent,
       securityResilienceScore: m.securityResilienceScore,
+      securityScenarioCoverage: m.securityScenarioCoverage,
+      qualityScenarioCoverage: m.qualityScenarioCoverage,
+      rankingEligible: m.rankingEligible,
       radar: m.radar,
       arenaIndex: Math.min(100, Math.max(0, arenaIndex)),
     };
   });
 
-  models.sort((a, b) => b.arenaIndex - a.arenaIndex || (b.avgQualityStars ?? 0) - (a.avgQualityStars ?? 0));
+  // Ranked models first, then models with insufficient scenario coverage.
+  models.sort(
+    (a, b) =>
+      Number(b.rankingEligible) - Number(a.rankingEligible) ||
+      b.arenaIndex - a.arenaIndex ||
+      (b.avgQualityStars ?? 0) - (a.avgQualityStars ?? 0),
+  );
 
   const kpis: GlobalKpis = {
     totalBenchmarkRuns: uniqueRunIds.size,

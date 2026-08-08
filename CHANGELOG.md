@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Scenario-level difficulty weighting for the Arena Index (fixes unfairness
+  when 0%-pass scenarios like Purple Team LXC escape / OpenWrt firewall
+  evasion inflated every model's ASR): Security and Quality scores are now
+  weighted per scenario by discrimination power (variance of per-model pass
+  rates), so scenarios with 0% or 100% global pass contribute weight 0.
+  Shared scoring primitives live in `src/lib/security-scoring.ts` and are
+  used by both `aggregateLeaderboard` and the public snapshot exporter.
+- Coverage eligibility floor (80% of the discriminating signal per dimension)
+  with a `rankingEligible` flag; under-covered models are shown "sin rango"
+  and sorted after ranked models.
+- Derived scenario difficulty tiers (easy/medium/hard): security by global
+  ASR (≥60 hard, ≥30 medium), general by average stars (≤2.5 hard), exposed
+  as `?difficulty=` filter on `GET /api/leaderboard`, in the dashboard UI
+  (ArenaLeaderboard + ConsolidatedDashboard), in the MCP
+  `get_arena_leaderboard` tool, and as `difficulty`/`pass_rate_pct` fields in
+  the public snapshot and landing scenarios view.
+
 - Per-model telemetry averages (output tokens, TTFT, tokens/sec, total time) in
   the model group summary cards.
 - Horizontal layout for the model score summary: average/range, ratings, and

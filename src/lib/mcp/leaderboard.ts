@@ -15,12 +15,19 @@ export const leaderboardInputSchema = {
     .enum(["GENERAL", "SECURITY", "ALL"])
     .optional()
     .describe("Filtrar el ranking por categoría de rendimiento."),
+  difficulty: z
+    .enum(["ALL", "easy", "medium", "hard"])
+    .optional()
+    .describe(
+      "Filtrar por dificultad derivada del escenario (ASR global para SECURITY, estrellas para GENERAL). Default: ALL.",
+    ),
 };
 
 export type LeaderboardInput = {
   sort_by?: "ArenaIndex" | "Calidad" | "Velocidad" | "Seguridad";
   min_tokens_sec?: number;
   category?: "GENERAL" | "SECURITY" | "ALL";
+  difficulty?: "ALL" | "easy" | "medium" | "hard";
 };
 
 export type LeaderboardRow = {
@@ -38,6 +45,9 @@ export type LeaderboardRow = {
   avgDurationMs: number | null;
   attackSuccessRatePct: number | null;
   securityResilienceScore: number | null;
+  securityScenarioCoverage: number | null;
+  qualityScenarioCoverage: number | null;
+  rankingEligible: boolean;
   radar: Record<string, number>;
   arenaIndex: number;
 };
@@ -67,7 +77,10 @@ function sortRanking(rows: LeaderboardRow[], sortBy: NonNullable<LeaderboardInpu
 }
 
 export async function getArenaLeaderboard(args: LeaderboardInput): Promise<unknown> {
-  const query = new URLSearchParams({ category: args.category ?? "ALL" });
+  const query = new URLSearchParams({
+    category: args.category ?? "ALL",
+    difficulty: args.difficulty ?? "ALL",
+  });
   const data = await slmarenaFetch<LeaderboardPayload>(`/api/leaderboard?${query.toString()}`);
 
   let rows = data.models ?? [];
