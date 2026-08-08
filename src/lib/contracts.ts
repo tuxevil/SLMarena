@@ -202,6 +202,7 @@ export type TestRun = {
   evaluatorModel: string | null;
   results: ModelResult[];
   createdAt: string;
+  updatedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
   errorMessage: string | null;

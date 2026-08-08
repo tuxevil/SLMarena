@@ -88,6 +88,7 @@ function makeRun(overrides: Partial<TestRun> = {}): TestRun {
     evaluatorModel: null,
     results: [makeResult()],
     createdAt: "2026-08-07T00:00:00.000Z",
+    updatedAt: "2026-08-07T00:00:00.000Z",
     startedAt: null,
     finishedAt: null,
     errorMessage: null,

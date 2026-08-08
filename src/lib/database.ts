@@ -955,8 +955,8 @@ export async function loadPersistedState(runId?: string): Promise<DatabaseState 
   try {
     const [runRows, resultRows, turnRows, evaluationRows, scenarioRows] = await sql.begin(async (transaction) => Promise.all([
       runId
-        ? transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
-        : transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
+        ? transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
+        : transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
       runId
         ? transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results WHERE test_run_id = ${runId}`
         : transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results`,
@@ -1111,8 +1111,8 @@ async function persistRun(run: TestRun, config: RunPersistenceConfig) {
 
   await sql.begin(async (transaction) => {
     await transaction`
-      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
-      VALUES (${run.id}, ${run.category ?? "GENERAL"}, ${run.attackType ?? null}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.scenarioId}, ${run.samplesPerModel}, ${run.systemPrompt}, ${config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
+      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message)
+      VALUES (${run.id}, ${run.category ?? "GENERAL"}, ${run.attackType ?? null}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.scenarioId}, ${run.samplesPerModel}, ${run.systemPrompt}, ${config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${new Date(run.updatedAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
       ON CONFLICT (id) DO UPDATE SET
         category = EXCLUDED.category,
         attack_type = EXCLUDED.attack_type,
@@ -1127,6 +1127,7 @@ async function persistRun(run: TestRun, config: RunPersistenceConfig) {
         selected_models = EXCLUDED.selected_models,
         parameters = EXCLUDED.parameters,
         evaluator_config = EXCLUDED.evaluator_config,
+        updated_at = EXCLUDED.updated_at,
         started_at = CASE WHEN EXCLUDED.control_version >= test_runs.control_version THEN EXCLUDED.started_at ELSE test_runs.started_at END,
         finished_at = CASE WHEN EXCLUDED.control_version >= test_runs.control_version THEN EXCLUDED.finished_at ELSE test_runs.finished_at END,
         error_message = CASE WHEN EXCLUDED.control_version >= test_runs.control_version THEN EXCLUDED.error_message ELSE test_runs.error_message END
@@ -1219,6 +1220,7 @@ function restoreRun(row: Record<string, unknown>, results: ModelResult[]): Persi
       evaluatorModel: evaluator?.model ?? null,
       results,
       createdAt: dateToIso(row.created_at),
+      updatedAt: row.updated_at ? dateToIso(row.updated_at) : dateToIso(row.created_at),
       startedAt: nullableDateToIso(row.started_at),
       finishedAt: nullableDateToIso(row.finished_at),
       errorMessage: row.error_message ? String(row.error_message) : null,

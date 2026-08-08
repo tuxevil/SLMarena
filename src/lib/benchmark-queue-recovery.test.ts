@@ -40,6 +40,7 @@ const { persistedRun } = vi.hoisted(() => {
       evaluatorModel: null,
       results: [result],
       createdAt: now,
+      updatedAt: now,
       startedAt: null,
       finishedAt: null,
       errorMessage: null,

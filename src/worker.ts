@@ -1,12 +1,30 @@
 import { loadEnvConfig } from "@next/env";
 import { Worker } from "bullmq";
 import { executeBenchmark } from "./lib/benchmark-queue";
+import { reconcileOrphanedRuns } from "./lib/reconcile-runs";
 import { redisConnection } from "./lib/redis-connection";
 
 loadEnvConfig(process.cwd());
 
 if (!process.env.REDIS_URL || !process.env.DATABASE_URL || !process.env.APP_ENCRYPTION_KEY) {
   throw new Error("REDIS_URL, DATABASE_URL, and APP_ENCRYPTION_KEY are required to start the durable worker.");
+}
+
+const RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+
+async function reconcile() {
+  try {
+    const outcome = await reconcileOrphanedRuns();
+    if (outcome.reenqueued.length > 0 || outcome.failed.length > 0) {
+      console.log("[slmarena] reconciliation done", {
+        reenqueued: outcome.reenqueued,
+        failed: outcome.failed,
+        skipped: outcome.skipped.length,
+      });
+    }
+  } catch (error) {
+    console.error("[slmarena] reconciliation failed", error);
+  }
 }
 
 const worker = new Worker<{ runId: string }>(
@@ -30,4 +48,8 @@ const shutdown = async () => {
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
 
-worker.waitUntilReady().then(() => console.log("[slmarena] benchmark worker ready"));
+worker.waitUntilReady().then(() => {
+  console.log("[slmarena] benchmark worker ready");
+  void reconcile();
+  setInterval(() => void reconcile(), RECONCILE_INTERVAL_MS);
+});

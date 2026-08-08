@@ -91,6 +91,7 @@ export const benchmarkStore = {
         Array.from({ length: input.samplesPerModel ?? 2 }, (_, sampleIndex) => createModelResult(modelName, sampleIndex)),
       ),
       createdAt: now,
+      updatedAt: now,
       startedAt: null,
       finishedAt: null,
       errorMessage: null,
@@ -395,6 +396,8 @@ export const benchmarkStore = {
   },
 
   async flush(id: string) {
+    const run = state.runs.get(id);
+    if (run) run.updatedAt = new Date().toISOString();
     await waitForPersistedRun(id);
   },
 
@@ -459,6 +462,7 @@ export const benchmarkStore = {
   updateRun(id: string, patch: Partial<Pick<TestRun, "status" | "paused" | "startedAt" | "finishedAt" | "errorMessage">>) {
     const run = getRequiredRun(id);
     Object.assign(run, patch);
+    run.updatedAt = new Date().toISOString();
     emit(run, `run.${run.status.toLowerCase()}`);
     return snapshot(run);
   },
@@ -721,6 +725,7 @@ function snapshot(run: StoredRun, options: { includeRawJson?: boolean } = {}): T
     evaluatorModel: run.evaluatorModel,
     results: clientResults,
     createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
     errorMessage: run.errorMessage,

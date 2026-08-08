@@ -78,6 +78,7 @@ function initSqliteTables(db: Database.Database) {
       parameters TEXT NOT NULL,
       evaluator_config TEXT,
       created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
       started_at TEXT,
       finished_at TEXT,
       error_message TEXT
@@ -180,6 +181,9 @@ function initSqliteTables(db: Database.Database) {
   }
   if (!runColumns.some((column) => column.name === "attack_type")) {
     migrationDb.exec("ALTER TABLE test_runs ADD COLUMN attack_type TEXT");
+  }
+  if (!runColumns.some((column) => column.name === "updated_at")) {
+    migrationDb.exec("ALTER TABLE test_runs ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
   }
 
   const scenarioColumns = migrationDb.prepare("PRAGMA table_info(scenarios)").all() as SqlRow[];
@@ -602,8 +606,8 @@ export function sqlitePersistRun(
 
   const transaction = db.transaction(() => {
     db.prepare(`
-      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, started_at, finished_at, error_message)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         category = excluded.category,
         attack_type = excluded.attack_type,
@@ -618,6 +622,7 @@ export function sqlitePersistRun(
         selected_models = excluded.selected_models,
         parameters = excluded.parameters,
         evaluator_config = excluded.evaluator_config,
+        updated_at = excluded.updated_at,
         started_at = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.started_at ELSE test_runs.started_at END,
         finished_at = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.finished_at ELSE test_runs.finished_at END,
         error_message = CASE WHEN excluded.control_version >= test_runs.control_version THEN excluded.error_message ELSE test_runs.error_message END
@@ -637,6 +642,7 @@ export function sqlitePersistRun(
       JSON.stringify(run.parameters),
       evaluatorConfigJson,
       run.createdAt,
+      run.updatedAt,
       run.startedAt,
       run.finishedAt,
       run.errorMessage,
@@ -889,6 +895,7 @@ export function sqliteLoadState(targetRunId?: string) {
       evaluatorModel: evaluatorConfig?.model ?? null,
       results: resultsByRun.get(runId) || [],
       createdAt: String(row.created_at),
+      updatedAt: row.updated_at ? String(row.updated_at) : String(row.created_at),
       startedAt: row.started_at ? String(row.started_at) : null,
       finishedAt: row.finished_at ? String(row.finished_at) : null,
       errorMessage: row.error_message ? String(row.error_message) : null,

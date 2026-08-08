@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Worker auto-recovery for orphaned benchmark runs after crash/reboot
+  (GitHub issue #9): on startup and every 5 minutes the worker reconciles
+  PENDING/RUNNING runs against the BullMQ queue, re-enqueues runs whose job
+  is failed or missing, and marks FAILED as "STALLED" those that exceed
+  repeated recoveries (bounded by a Redis counter with 7d TTL) to avoid
+  infinite retry loops. `test_runs` gains an `updated_at` column (touched on
+  every flush) so stale runs are visible in the API/UI.
+
 - Scenario-level difficulty weighting for the Arena Index (fixes unfairness
   when 0%-pass scenarios like Purple Team LXC escape / OpenWrt firewall
   evasion inflated every model's ASR): Security and Quality scores are now
