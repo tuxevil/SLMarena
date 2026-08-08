@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+process.env.SQLITE_PATH = join(tmpdir(), `slmarena-leaderboard-test-${process.pid}-${crypto.randomUUID()}.db`);
+
+import { beforeEach, describe, expect, it } from "vitest";
 import { aggregateLeaderboard, extractParamSize, queuePersistedRun, waitForPersistedRun } from "@/lib/database";
+import { getSqliteDb } from "./sqlite-db";
 import type { Evaluation, ModelResult, TestRun } from "./contracts";
 
 const TEST_MODEL = "eval-fail-test:2b";
@@ -76,6 +82,11 @@ async function persistRun(run: TestRun) {
   await waitForPersistedRun(run.id);
 }
 
+beforeEach(() => {
+  const db = getSqliteDb();
+  db.exec("PRAGMA foreign_keys = OFF; DELETE FROM test_runs; DELETE FROM scenarios; PRAGMA foreign_keys = ON;");
+});
+
 describe("Leaderboard Unit Tests (SLMArena v1.3)", () => {
   it("extracts model parameter sizes correctly from names", () => {
     expect(extractParamSize("Qwen-2.5-7B")).toEqual({ label: "7.6B", value: 7.6 });
@@ -115,5 +126,91 @@ describe("Leaderboard Unit Tests (SLMArena v1.3)", () => {
     expect(row!.failedEvals).toBe(1);
     expect(row!.avgQualityStars).toBe(5);
     expect(row!.avgTokPerSec).toBe(5);
+  });
+});
+
+describe("Leaderboard category filter (GENERAL/SECURITY)", () => {
+  const GENERAL_MODEL = "cat-filter-general:1b";
+  const SECURITY_MODEL = "cat-filter-security:1b";
+
+  async function seedGeneralAndSecurityRuns() {
+    await persistRun(
+      makeRun({
+        models: [GENERAL_MODEL],
+        results: [
+          makeResult({
+            modelName: GENERAL_MODEL,
+            tokPerSec: 10,
+            evaluation: makeEvaluation({ scoreStars: 5 }),
+          }),
+        ],
+      }),
+    );
+    await persistRun(
+      makeRun({
+        category: "SECURITY",
+        attackType: "SYSTEM_PROMPT_LEAKAGE",
+        models: [SECURITY_MODEL],
+        results: [
+          makeResult({
+            modelName: SECURITY_MODEL,
+            tokPerSec: 100,
+            evaluation: makeEvaluation({ scoreStars: 2, securityScore: 5, systemLeakageDetected: true }),
+          }),
+        ],
+      }),
+    );
+  }
+
+  it("keeps only the runs of the requested category", async () => {
+    await seedGeneralAndSecurityRuns();
+
+    const general = await aggregateLeaderboard({ category: "GENERAL" });
+    expect(general.models.map((m) => m.modelName)).toContain(GENERAL_MODEL);
+    expect(general.models.map((m) => m.modelName)).not.toContain(SECURITY_MODEL);
+
+    const security = await aggregateLeaderboard({ category: "SECURITY" });
+    expect(security.models.map((m) => m.modelName)).not.toContain(GENERAL_MODEL);
+    expect(security.models.map((m) => m.modelName)).toContain(SECURITY_MODEL);
+
+    const all = await aggregateLeaderboard({ category: "ALL" });
+    expect(all.models.map((m) => m.modelName)).toEqual(
+      expect.arrayContaining([GENERAL_MODEL, SECURITY_MODEL]),
+    );
+  });
+
+  it("recomputes the Arena Index and metrics over the filtered subset", async () => {
+    await seedGeneralAndSecurityRuns();
+
+    const all = await aggregateLeaderboard({ category: "ALL" });
+    const general = await aggregateLeaderboard({ category: "GENERAL" });
+    const security = await aggregateLeaderboard({ category: "SECURITY" });
+
+    const generalInAll = all.models.find((m) => m.modelName === GENERAL_MODEL)!;
+    const generalOnly = general.models.find((m) => m.modelName === GENERAL_MODEL)!;
+    const securityInAll = all.models.find((m) => m.modelName === SECURITY_MODEL)!;
+    const securityOnly = security.models.find((m) => m.modelName === SECURITY_MODEL)!;
+
+    // Speed is normalized against the fastest model of the subset (10 t/s in
+    // GENERAL vs 100 t/s in ALL), so the same model scores higher in its own
+    // subset even though its raw data is unchanged.
+    expect(generalOnly.avgTokPerSec).toBe(generalInAll.avgTokPerSec);
+    expect(generalOnly.arenaIndex).toBeGreaterThan(generalInAll.arenaIndex);
+    expect(generalOnly.arenaIndex).toBe(100);
+    expect(generalInAll.arenaIndex).toBe(82);
+
+    // The SECURITY model sets the speed max on both subsets, so its Arena
+    // Index is identical in ALL and in SECURITY.
+    expect(securityOnly.arenaIndex).toBe(securityInAll.arenaIndex);
+    expect(securityOnly.arenaIndex).toBe(36);
+
+    // The GENERAL subset has no security signal: ASR is null and the security
+    // dimension falls back to a perfect resilience score.
+    expect(generalOnly.attackSuccessRatePct).toBeNull();
+    expect(generalOnly.securityResilienceScore).toBe(100);
+    expect(general.kpis.globalAsrPercent).toBeNull();
+    expect(securityOnly.attackSuccessRatePct).toBe(100);
+    expect(securityOnly.securityResilienceScore).toBe(0);
+    expect(security.kpis.globalAsrPercent).toBe(100);
   });
 });
