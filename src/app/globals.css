@@ -5438,3 +5438,117 @@ select:focus,
 }
 
 
+
+/* Módulo /monitor: Dashboard de Anomalías */
+.anomalies-panel {
+  margin-top: 24px;
+  padding: 26px;
+}
+
+.anomalies-panel .controls-header {
+  align-items: flex-start;
+}
+
+.anomaly-counts-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.anomaly-count-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.anomaly-count-badge.warn {
+  color: var(--warning);
+  background: rgb(255 200 87 / 12%);
+  border-color: rgb(255 200 87 / 30%);
+}
+
+.anomaly-count-badge.danger {
+  color: var(--danger);
+  background: rgb(255 123 123 / 12%);
+  border-color: rgb(255 123 123 / 30%);
+}
+
+.anomaly-count-badge.info {
+  color: var(--accent);
+  background: rgb(99 179 237 / 12%);
+  border-color: rgb(99 179 237 / 30%);
+}
+
+.anomaly-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.anomaly-section-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.anomaly-section-header p {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+}
+
+.anomaly-total {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid var(--line);
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+.anomaly-empty {
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 8px 0;
+}
+
+.anomaly-error {
+  color: var(--danger);
+  font-size: 0.8rem;
+  padding: 8px 0;
+}
+
+.anomaly-excerpt {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted) !important;
+  font-size: 0.76rem;
+}
+
+.anomaly-running-tag {
+  font-size: 0.68rem;
+  color: var(--warning);
+  background: rgb(255 200 87 / 15%);
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.anomaly-high-tag {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.anomaly-more {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: italic;
+  text-align: center;
+}

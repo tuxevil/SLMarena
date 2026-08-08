@@ -10,11 +10,13 @@ const RECOVERY_KEY_PREFIX = "slmarena:recovery:";
 const RECOVERY_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_RECOVERIES = 3;
 const STALLED_ERROR_MESSAGE = "STALLED: worker interrupted after repeated recoveries";
+const EVAL_STALLED_ERROR_MESSAGE = "STALLED: evaluation left RUNNING after run finished (reconciled)";
 
 export type ReconcileResult = {
   reenqueued: string[];
   failed: string[];
   skipped: string[];
+  evalsMarked: number;
 };
 
 export async function reconcileOrphanedRuns(options: { maxRecoveries?: number } = {}): Promise<ReconcileResult> {
@@ -22,7 +24,7 @@ export async function reconcileOrphanedRuns(options: { maxRecoveries?: number } 
   const queue = new Queue(QUEUE_NAME, { connection: redisConnection() });
   const connection = redisConnection();
   const redis = new IORedis(connection.port, connection.host, connection);
-  const result: ReconcileResult = { reenqueued: [], failed: [], skipped: [] };
+  const result: ReconcileResult = { reenqueued: [], failed: [], skipped: [], evalsMarked: 0 };
   try {
     const persisted = await loadPersistedState();
     if (!persisted) return result;
@@ -54,11 +56,42 @@ export async function reconcileOrphanedRuns(options: { maxRecoveries?: number } 
       if (recoveries === 0) await redis.expire(recoveryKey, RECOVERY_TTL_SECONDS);
       result.reenqueued.push(run.id);
     }
+
+    result.evalsMarked = await reconcileOrphanedEvals(persisted);
     return result;
   } finally {
     await queue.close();
     redis.disconnect();
   }
+}
+
+export async function reconcileOrphanedEvals(persisted?: Awaited<ReturnType<typeof loadPersistedState>>): Promise<number> {
+  const state = persisted ?? (await loadPersistedState());
+  if (!state) return 0;
+  let marked = 0;
+  for (const { run } of state.runs) {
+    if (!["COMPLETED", "CANCELLED", "FAILED"].includes(run.status)) continue;
+    let stored = benchmarkStore.getStoredRun(run.id);
+    if (!stored) {
+      await benchmarkStore.refreshRun(run.id);
+      stored = benchmarkStore.getStoredRun(run.id);
+    }
+    if (!stored) continue;
+    let markedInRun = 0;
+    for (const result of run.results) {
+      if (result.evalStatus !== "RUNNING") continue;
+      benchmarkStore.updateResult(run.id, result.id, {
+        evalStatus: "FAILED",
+        errorMessage: EVAL_STALLED_ERROR_MESSAGE,
+      });
+      markedInRun += 1;
+    }
+    if (markedInRun > 0) {
+      await benchmarkStore.flush(run.id);
+      marked += markedInRun;
+    }
+  }
+  return marked;
 }
 
 async function markStalled(runId: string) {

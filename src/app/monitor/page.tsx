@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TopbarNav } from "@/components/layout/topbar-nav";
 import { LiveMonitorPanel } from "@/components/monitor/live-monitor-panel";
+import { AnomaliesPanel } from "@/components/monitor/anomalies-panel";
 
 export default function MonitorPage() {
   const [ollamaUrl, setOllamaUrl] = useState("http://127.0.0.1:11434");
@@ -28,6 +29,7 @@ export default function MonitorPage() {
     <main className="shell">
       <TopbarNav activeTab="monitor" ollamaUrl={ollamaUrl} />
       <LiveMonitorPanel ollamaUrl={ollamaUrl} />
+      <AnomaliesPanel />
     </main>
   );
 }

@@ -31,6 +31,11 @@ import {
   type ScenarioDifficulty,
   type ScenarioModelStat,
 } from "@/lib/security-scoring";
+import {
+  buildAnomalyDashboard,
+  emptyAnomalyDashboard,
+  type AnomalyDashboard,
+} from "@/lib/anomalies";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 import {
   sqliteAppendEvaluationHistory,
@@ -1102,6 +1107,15 @@ export type ExportFilters = {
   minScore?: number | null;
   vulnerableOnly?: boolean;
 };
+
+export async function listAnomalies(): Promise<AnomalyDashboard> {
+  const state = await loadPersistedState();
+  if (!state) return emptyAnomalyDashboard();
+  return buildAnomalyDashboard(
+    state.runs.map((item) => item.run),
+    state.scenarios,
+  );
+}
 
 export type ExportRow = {
   runId: string;

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Anomaly dashboard in the UI (GitHub issue #11): `/monitor` now shows three
+  sections — empty/near-zero responses (trimmed length < 15 chars, grouped by
+  model × scenario), failed evaluations (FAILED or RUNNING orphans on finished
+  runs, each with a re-evaluate button that reuses the existing per-result
+  re-evaluation endpoint), and tps telemetry outliers. Detection is pure logic
+  in `src/lib/anomalies.ts`, exposed via `GET /api/anomalies` backed by
+  `listAnomalies()` in `src/lib/database.ts`. Outliers use the z-score vs. the
+  model's own tps distribution (sample std), gated by a minimum sample size (5)
+  and capped by the Samuelson bound `(n-1)/√n` so the z > 3.5 criterion never
+  fires on sample sizes that cannot mathematically support it.
+- Orphaned evaluation reconciliation in the worker: on the same 5-minute
+  reconcile pass, results left with `eval_status = RUNNING` on finished runs
+  are marked FAILED as "STALLED" (`reconcileOrphanedEvals`), so hung evals
+  surface in the anomalies dashboard instead of staying invisible.
+
 - Worker auto-recovery for orphaned benchmark runs after crash/reboot
   (GitHub issue #9): on startup and every 5 minutes the worker reconciles
   PENDING/RUNNING runs against the BullMQ queue, re-enqueues runs whose job
