@@ -8,12 +8,19 @@ import type {
   ModelResult,
   Scenario,
   TestRun,
-  TurnResult,
   LeaderboardData,
   LeaderboardWeights,
   LeaderboardModelRow,
   SecurityRadarMetrics,
   GlobalKpis,
+  BenchmarkParameters,
+  EvaluationStatus,
+  HumanStatus,
+  ModelStatus,
+  RunStatus,
+  SecurityAttackType,
+  TestCategory,
+  TurnResult,
 } from "@/lib/contracts";
 import {
   computeDiscriminationWeights,
@@ -1083,6 +1090,225 @@ export async function listPersistedHistory(filters: {
     page: filters.page,
     pageSize: filters.pageSize,
   };
+}
+
+export type ExportFilters = {
+  scenarioId?: string | null;
+  modelName?: string | null;
+  category?: string | null;
+  status?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  minScore?: number | null;
+  vulnerableOnly?: boolean;
+};
+
+export type ExportRow = {
+  runId: string;
+  runCreatedAt: string;
+  runStatus: RunStatus;
+  category: TestCategory;
+  attackType: SecurityAttackType | null;
+  scenarioId: string | null;
+  systemPrompt: string;
+  userMessages: string[];
+  parameters: BenchmarkParameters;
+  selectedModels: string[];
+  ollamaUrl: string;
+  runError: string | null;
+  resultId: string;
+  modelName: string;
+  sampleIndex: number;
+  status: ModelStatus;
+  evalStatus: EvaluationStatus;
+  responseText: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  ttftMs: number | null;
+  tokPerSec: number | null;
+  totalDurationMs: number | null;
+  errorMessage: string | null;
+  humanStatus: HumanStatus;
+  humanNotes: string;
+  evaluatorModel: string | null;
+  grammarRating: number | null;
+  complianceRating: number | null;
+  accuracyRating: number | null;
+  scoreStars: number | null;
+  grammarAnalysis: string | null;
+  complianceAnalysis: string | null;
+  accuracyAnalysis: string | null;
+  feedbackText: string | null;
+  securityScore: number | null;
+  injectionSuccessful: boolean | null;
+  systemLeakageDetected: boolean | null;
+  vulnerabilityAnalysis: string | null;
+};
+
+export async function exportResults(filters: ExportFilters = {}): Promise<ExportRow[]> {
+  if (!isPostgres()) {
+    const state = sqliteLoadState();
+    const rows = state.runs.flatMap((entry) => entry.run.results.map((result) => toExportRow(entry.run, result, entry.config.ollamaUrl)));
+    return filterExportRows(rows, filters);
+  }
+  const sql = getClient()!;
+  const scenarioId = filters.scenarioId ?? "";
+  const modelName = filters.modelName ?? "";
+  const category = filters.category ?? "";
+  const status = filters.status ?? "";
+  const dateFrom = filters.dateFrom ?? "";
+  const dateTo = filters.dateTo ?? "";
+  const minScore = filters.minScore ?? null;
+  const vulnerableOnly = Boolean(filters.vulnerableOnly);
+  const where = sql`
+    WHERE (${scenarioId} = '' OR runs.scenario_id::text LIKE ${scenarioId} || '%')
+      AND (${modelName} = '' OR results.model_name = ${modelName})
+      AND (${category} = '' OR runs.category = ${category})
+      AND (${status} = '' OR runs.status = ${status})
+      AND (${dateFrom} = '' OR runs.created_at >= NULLIF(${dateFrom}, '')::date)
+      AND (${dateTo} = '' OR runs.created_at < (NULLIF(${dateTo}, '')::date + interval '1 day'))
+      AND (${minScore}::int IS NULL OR evaluations.score_stars >= ${minScore}::int)
+      AND (${!vulnerableOnly} OR (evaluations.injection_successful = TRUE OR evaluations.system_leakage_detected = TRUE))
+  `;
+  try {
+    const rows = await sql`
+      SELECT
+        runs.id AS run_id, runs.created_at AS run_created_at, runs.status AS run_status,
+        runs.category, runs.attack_type, runs.scenario_id, runs.system_prompt, runs.user_messages,
+        runs.parameters, runs.selected_models, runs.ollama_url, runs.error_message AS run_error,
+        results.id AS result_id, results.model_name, results.sample_index, results.status,
+        results.eval_status, results.response_text, results.input_tokens, results.output_tokens,
+        results.ttft_ms, results.tok_per_sec, results.total_duration_ms, results.error_message,
+        results.human_status, results.human_notes,
+        evaluations.evaluator_model, evaluations.grammar_rating, evaluations.compliance_rating,
+        evaluations.accuracy_rating, evaluations.score_stars, evaluations.grammar_analysis,
+        evaluations.compliance_analysis, evaluations.accuracy_analysis, evaluations.feedback_text,
+        evaluations.security_score, evaluations.injection_successful, evaluations.system_leakage_detected,
+        evaluations.vulnerability_analysis
+      FROM test_runs runs
+      JOIN model_results results ON results.test_run_id = runs.id
+      LEFT JOIN evaluations ON evaluations.model_result_id = results.id
+      ${where}
+      ORDER BY runs.created_at DESC, runs.id ASC, results.sample_index ASC
+    `;
+    return rows.map(toExportRowFromSql);
+  } catch (error) {
+    reportPersistenceError(error);
+    throw error;
+  }
+}
+
+function toExportRow(run: TestRun, result: ModelResult, ollamaUrl: string): ExportRow {
+  const evaluation = result.evaluation;
+  return {
+    runId: run.id,
+    runCreatedAt: run.createdAt,
+    runStatus: run.status,
+    category: run.category,
+    attackType: run.attackType,
+    scenarioId: run.scenarioId,
+    systemPrompt: run.systemPrompt,
+    userMessages: run.userMessages,
+    parameters: run.parameters,
+    selectedModels: run.models,
+    ollamaUrl,
+    runError: run.errorMessage,
+    resultId: result.id,
+    modelName: result.modelName,
+    sampleIndex: result.sampleIndex,
+    status: result.status,
+    evalStatus: result.evalStatus,
+    responseText: result.responseText,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    ttftMs: result.ttftMs,
+    tokPerSec: result.tokPerSec,
+    totalDurationMs: result.totalDurationMs,
+    errorMessage: result.errorMessage,
+    humanStatus: result.humanStatus,
+    humanNotes: result.humanNotes,
+    evaluatorModel: evaluation?.evaluatorModel ?? null,
+    grammarRating: evaluation?.grammarRating ?? null,
+    complianceRating: evaluation?.complianceRating ?? null,
+    accuracyRating: evaluation?.accuracyRating ?? null,
+    scoreStars: evaluation?.scoreStars ?? null,
+    grammarAnalysis: evaluation?.grammarAnalysis ?? null,
+    complianceAnalysis: evaluation?.complianceAnalysis ?? null,
+    accuracyAnalysis: evaluation?.accuracyAnalysis ?? null,
+    feedbackText: evaluation?.feedbackText ?? null,
+    securityScore: evaluation?.securityScore ?? null,
+    injectionSuccessful: evaluation?.injectionSuccessful ?? null,
+    systemLeakageDetected: evaluation?.systemLeakageDetected ?? null,
+    vulnerabilityAnalysis: evaluation?.vulnerabilityAnalysis ?? null,
+  };
+}
+
+function toExportRowFromSql(row: Record<string, unknown>): ExportRow {
+  return {
+    runId: String(row.run_id),
+    runCreatedAt: dateToIso(row.run_created_at),
+    runStatus: String(row.run_status) as RunStatus,
+    category: (String(row.category) as TestCategory) || "GENERAL",
+    attackType: row.attack_type ? (String(row.attack_type) as SecurityAttackType) : null,
+    scenarioId: row.scenario_id ? String(row.scenario_id) : null,
+    systemPrompt: String(row.system_prompt ?? ""),
+    userMessages: parseJsonArray(row.user_messages),
+    parameters: (parseJson(row.parameters) ?? {}) as BenchmarkParameters,
+    selectedModels: parseJsonArray(row.selected_models),
+    ollamaUrl: String(row.ollama_url ?? ""),
+    runError: row.run_error ? String(row.run_error) : null,
+    resultId: String(row.result_id),
+    modelName: String(row.model_name),
+    sampleIndex: Number(row.sample_index ?? 0),
+    status: String(row.status) as ModelStatus,
+    evalStatus: String(row.eval_status) as EvaluationStatus,
+    responseText: row.response_text ? String(row.response_text) : null,
+    inputTokens: numberOrNull(row.input_tokens),
+    outputTokens: numberOrNull(row.output_tokens),
+    ttftMs: numberOrNull(row.ttft_ms),
+    tokPerSec: numberOrNull(row.tok_per_sec),
+    totalDurationMs: numberOrNull(row.total_duration_ms),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+    humanStatus: String(row.human_status) as HumanStatus,
+    humanNotes: String(row.human_notes ?? ""),
+    evaluatorModel: row.evaluator_model ? String(row.evaluator_model) : null,
+    grammarRating: numberOrNull(row.grammar_rating),
+    complianceRating: numberOrNull(row.compliance_rating),
+    accuracyRating: numberOrNull(row.accuracy_rating),
+    scoreStars: numberOrNull(row.score_stars),
+    grammarAnalysis: row.grammar_analysis ? String(row.grammar_analysis) : null,
+    complianceAnalysis: row.compliance_analysis ? String(row.compliance_analysis) : null,
+    accuracyAnalysis: row.accuracy_analysis ? String(row.accuracy_analysis) : null,
+    feedbackText: row.feedback_text ? String(row.feedback_text) : null,
+    securityScore: numberOrNull(row.security_score),
+    injectionSuccessful: booleanOrNull(row.injection_successful),
+    systemLeakageDetected: booleanOrNull(row.system_leakage_detected),
+    vulnerabilityAnalysis: row.vulnerability_analysis ? String(row.vulnerability_analysis) : null,
+  };
+}
+
+function filterExportRows(rows: ExportRow[], filters: ExportFilters): ExportRow[] {
+  const scenarioId = filters.scenarioId?.trim().toLowerCase() ?? "";
+  const modelName = filters.modelName?.trim() ?? "";
+  const category = filters.category?.trim() ?? "";
+  const status = filters.status?.trim() ?? "";
+  const dateFrom = filters.dateFrom ?? null;
+  const dateTo = filters.dateTo ?? null;
+  return rows.filter((row) => {
+    if (scenarioId && !(row.scenarioId ?? "").toLowerCase().startsWith(scenarioId)) return false;
+    if (modelName && row.modelName !== modelName) return false;
+    if (category && row.category !== category) return false;
+    if (status && row.runStatus !== status) return false;
+    if (dateFrom && row.runCreatedAt.slice(0, 10) < dateFrom) return false;
+    if (dateTo && row.runCreatedAt.slice(0, 10) > dateTo) return false;
+    if (filters.minScore != null && (row.scoreStars == null || row.scoreStars < filters.minScore)) return false;
+    if (filters.vulnerableOnly && !(row.injectionSuccessful || row.systemLeakageDetected)) return false;
+    return true;
+  });
+}
+
+function booleanOrNull(value: unknown) {
+  return value === null || value === undefined ? null : Boolean(value);
 }
 
 function stripClientRawJson(run: TestRun): TestRun {
