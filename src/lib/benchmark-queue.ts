@@ -7,6 +7,8 @@ import { redisConnection } from "@/lib/redis-connection";
 
 type QueueJob = { runId: string; execute: () => Promise<void> };
 
+const MIN_RESPONSE_CHARS = 15;
+
 const pendingJobs: QueueJob[] = [];
 let activeJobs = 0;
 let redisQueue: BullQueue<{ runId: string }> | null = null;
@@ -168,6 +170,18 @@ async function executeModel(runId: string, resultId: string) {
         tokPerSec: response.tokPerSec,
         totalDurationMs: response.totalDurationMs,
       });
+    }
+
+    const inferredResult = benchmarkStore.getStoredRun(runId)?.results.find((item) => item.id === resultId);
+    const responseText = inferredResult?.responseText ?? "";
+    if (responseText.trim().length < MIN_RESPONSE_CHARS) {
+      console.warn(`[slmarena] [Inference Failed] ${runId}/${resultId}: response below ${MIN_RESPONSE_CHARS} chars (${responseText.trim().length}).`);
+      benchmarkStore.updateResult(runId, resultId, {
+        status: "FAILED",
+        evalStatus: "FAILED",
+        errorMessage: "EMPTY_RESPONSE",
+      });
+      return;
     }
 
     const totals = aggregateTelemetry(turnTelemetry);

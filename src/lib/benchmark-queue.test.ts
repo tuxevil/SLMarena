@@ -12,7 +12,7 @@ describe("enqueueBenchmark", () => {
         new Response(
           [
             JSON.stringify({ message: { content: "Local" } }),
-            JSON.stringify({ message: { content: " answer" } }),
+            JSON.stringify({ message: { content: " model answering here" } }),
             JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 8, eval_duration: 1_000_000_000, total_duration: 1_200_000_000 }),
           ].join("\n"),
           { status: 200 },
@@ -34,7 +34,7 @@ describe("enqueueBenchmark", () => {
 
     expect(completed.status).toBe("COMPLETED");
     expect(result.status).toBe("COMPLETED");
-    expect(result.responseText).toBe("Local answer");
+    expect(result.responseText).toBe("Local model answering here");
     expect(result.outputTokens).toBe(8);
     expect(result.tokPerSec).toBe(8);
   });
@@ -43,7 +43,7 @@ describe("enqueueBenchmark", () => {
     const chatStream = () =>
       new Response(
         [
-          JSON.stringify({ message: { content: "Answer" } }),
+          JSON.stringify({ message: { content: "A full isolated answer" } }),
           JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 8, eval_duration: 1_000_000_000, total_duration: 1_200_000_000 }),
         ].join("\n"),
         { status: 200 },
@@ -83,7 +83,7 @@ describe("enqueueBenchmark", () => {
         calls += 1;
         return new Response(
           [
-            JSON.stringify({ message: { content: `Answer ${calls}` } }),
+            JSON.stringify({ message: { content: `Full answer number ${calls}` } }),
             JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 8, eval_duration: 1_000_000_000, total_duration: 1_200_000_000 }),
           ].join("\n"),
           { status: 200 },
@@ -108,8 +108,99 @@ describe("enqueueBenchmark", () => {
 
     expect(completed.status).toBe("COMPLETED");
     expect(completed.results).toHaveLength(2);
-    expect(completed.results.map((result) => result.responseText).sort()).toEqual(["Answer 1", "Answer 2"]);
+    expect(completed.results.map((result) => result.responseText).sort()).toEqual(["Full answer number 1", "Full answer number 2"]);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks a result as FAILED with EMPTY_RESPONSE when the model returns an empty response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          [
+            JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 0, eval_duration: 1_000_000_000, total_duration: 1_000_000_000 }),
+          ].join("\n"),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const run = benchmarkStore.createRun({
+      ollamaUrl: "http://localhost:11434",
+      systemPrompt: "Be concise.",
+      userMessages: ["Say hello."],
+      models: [`empty-model-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    enqueueBenchmark(run.id);
+    const failed = await waitForRun(run.id);
+    const result = failed.results[0];
+
+    expect(failed.status).toBe("FAILED");
+    expect(result.status).toBe("FAILED");
+    expect(result.evalStatus).toBe("FAILED");
+    expect(result.errorMessage).toBe("EMPTY_RESPONSE");
+  });
+
+  it("marks a result as FAILED with EMPTY_RESPONSE when the response is shorter than 15 chars", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          [
+            JSON.stringify({ message: { content: "short" } }),
+            JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 5, eval_duration: 1_000_000_000, total_duration: 1_000_000_000 }),
+          ].join("\n"),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const run = benchmarkStore.createRun({
+      ollamaUrl: "http://localhost:11434",
+      systemPrompt: "Be concise.",
+      userMessages: ["Say hello."],
+      models: [`short-model-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    enqueueBenchmark(run.id);
+    const failed = await waitForRun(run.id);
+
+    expect(failed.status).toBe("FAILED");
+    expect(failed.results[0].status).toBe("FAILED");
+    expect(failed.results[0].errorMessage).toBe("EMPTY_RESPONSE");
+  });
+
+  it("completes a result whose response is exactly at the 15-char minimum", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          [
+            JSON.stringify({ message: { content: "0123456789abcde" } }),
+            JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 15, eval_duration: 1_000_000_000, total_duration: 1_000_000_000 }),
+          ].join("\n"),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const run = benchmarkStore.createRun({
+      ollamaUrl: "http://localhost:11434",
+      systemPrompt: "Be concise.",
+      userMessages: ["Say hello."],
+      models: [`boundary-model-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    enqueueBenchmark(run.id);
+    const completed = await waitForRun(run.id);
+
+    expect(completed.status).toBe("COMPLETED");
+    expect(completed.results[0].status).toBe("COMPLETED");
+    expect(completed.results[0].responseText).toBe("0123456789abcde");
   });
 
   it("waits while a run is paused and resumes without losing the run", async () => {
@@ -118,7 +209,7 @@ describe("enqueueBenchmark", () => {
       vi.fn().mockResolvedValue(
         new Response(
           [
-            JSON.stringify({ message: { content: "Resumed" } }),
+            JSON.stringify({ message: { content: "Resumed with a full answer" } }),
             JSON.stringify({ done: true, prompt_eval_count: 2, eval_count: 4, eval_duration: 1_000_000_000, total_duration: 1_100_000_000 }),
           ].join("\n"),
           { status: 200 },

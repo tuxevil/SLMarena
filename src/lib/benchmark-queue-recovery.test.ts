@@ -70,7 +70,7 @@ describe("executeBenchmark run recovery", () => {
       vi.fn().mockResolvedValue(
         new Response(
           [
-            JSON.stringify({ message: { content: "Recovered" } }),
+            JSON.stringify({ message: { content: "Recovered from the database" } }),
             JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 8, eval_duration: 1_000_000_000, total_duration: 1_200_000_000 }),
           ].join("\n"),
           { status: 200 },
@@ -84,6 +84,6 @@ describe("executeBenchmark run recovery", () => {
 
     expect(loadPersistedState).toHaveBeenCalledWith("recovery-run-1");
     expect(benchmarkStore.getRun("recovery-run-1")?.status).toBe("COMPLETED");
-    expect(benchmarkStore.getRun("recovery-run-1")?.results[0].responseText).toBe("Recovered");
+    expect(benchmarkStore.getRun("recovery-run-1")?.results[0].responseText).toBe("Recovered from the database");
   });
 });
