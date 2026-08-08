@@ -351,6 +351,7 @@ export async function checkJobStatus(args: JobStatusInput): Promise<unknown> {
   const total = run.results?.length ?? 0;
   const completed = run.results?.filter((r) => r.status === "COMPLETED").length ?? 0;
   const failed = run.results?.filter((r) => r.status === "FAILED").length ?? 0;
+  const failedEvals = run.results?.filter((r) => r.evalStatus === "FAILED").length ?? 0;
   const progressPct = total > 0 ? Math.round(((completed + failed) / total) * 100) : 0;
 
   return {
@@ -361,6 +362,7 @@ export async function checkJobStatus(args: JobStatusInput): Promise<unknown> {
     partial_metrics: {
       completed,
       failed,
+      failed_evals: failedEvals,
       total,
       running: run.results?.filter((r) => ["INFERRING", "EVALUATING"].includes(r.status)).length ?? 0,
     },

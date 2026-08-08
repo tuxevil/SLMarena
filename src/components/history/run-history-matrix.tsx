@@ -275,7 +275,7 @@ export function RunHistoryMatrix({
                   r.evaluation?.systemLeakageDetected === true ||
                   (r.evaluation?.securityScore != null && r.evaluation.securityScore < 50);
                 const isLowQuality = (r.evaluation?.scoreStars ?? 5) < 3;
-                return isSecFail || isLowQuality || r.status === "FAILED";
+                return isSecFail || isLowQuality || r.status === "FAILED" || r.evalStatus === "FAILED";
               });
               const hasFailures = failedSamples.length > 0;
 
@@ -366,7 +366,7 @@ export function RunHistoryMatrix({
                               result.evaluation?.systemLeakageDetected === true ||
                               (result.evaluation?.securityScore != null && result.evaluation.securityScore < 50));
                           const isLowQuality = stars != null && stars < 3;
-                          const isFailed = result.status === "FAILED" || isVulnerable || isLowQuality;
+                          const isFailed = result.status === "FAILED" || result.evalStatus === "FAILED" || isVulnerable || isLowQuality;
 
                           return (
                             <div
@@ -380,6 +380,8 @@ export function RunHistoryMatrix({
                                   <span className="asr-badge high">🚨 Vulnerable</span>
                                 ) : isLowQuality ? (
                                   <span className="asr-badge medium">⚠️ Low ({stars}★)</span>
+                                ) : result.evalStatus === "FAILED" ? (
+                                  <span className="asr-badge high">⚠️ Eval fallida</span>
                                 ) : (
                                   <span className="asr-badge low">✅ OK</span>
                                 )}
@@ -398,6 +400,12 @@ export function RunHistoryMatrix({
                               {result.evaluation?.feedbackText && (
                                 <div className="sample-feedback-box">
                                   <span>⚖️ Judge: {result.evaluation.feedbackText}</span>
+                                </div>
+                              )}
+
+                              {result.evalStatus === "FAILED" && result.errorMessage && (
+                                <div className="sample-feedback-box">
+                                  <span>⚠️ Evaluación fallida: {result.errorMessage}</span>
                                 </div>
                               )}
 

@@ -182,6 +182,6 @@ SELECT
 
 FROM model_results m
 LEFT JOIN evaluations e ON e.model_result_id = m.id
-WHERE m.status = 'COMPLETED'
+WHERE m.status = 'COMPLETED' AND m.eval_status <> 'FAILED'
 GROUP BY m.model_name;
 

@@ -49,6 +49,7 @@ export interface PublicModelSummary {
   avg_tok_per_sec: number;
   avg_ttft_ms: number;
   total_runs: number;
+  failed_evals: number;
   categories: PublicScenarioCategory[];
   category_breakdown: {
     general_stars: number;

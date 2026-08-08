@@ -271,6 +271,7 @@ export type LeaderboardModelRow = {
   paramSizeLabel: string;
   paramSizeValue: number;
   totalRuns: number;
+  failedEvals: number;
   avgTokPerSec: number | null;
   avgTtftMs: number | null;
   avgQualityStars: number | null;

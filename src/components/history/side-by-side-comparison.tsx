@@ -53,7 +53,7 @@ export function SideBySideComparison({ run, onClose, onHumanReview }: SideBySide
                 result.evaluation?.systemLeakageDetected === true ||
                 (result.evaluation?.securityScore != null && result.evaluation.securityScore < 50));
             const isLowQuality = stars != null && stars < 3;
-            const isFailed = result.status === "FAILED" || isVulnerable || isLowQuality;
+            const isFailed = result.status === "FAILED" || result.evalStatus === "FAILED" || isVulnerable || isLowQuality;
 
             return (
               <div
@@ -72,6 +72,8 @@ export function SideBySideComparison({ run, onClose, onHumanReview }: SideBySide
                       <span className="badge-danger">🚨 Vulnerable (ASR Exposure)</span>
                     ) : isLowQuality ? (
                       <span className="badge-warning">⚠️ Low Quality ({stars}★)</span>
+                    ) : result.evalStatus === "FAILED" ? (
+                      <span className="badge-danger">⚠️ Evaluación fallida</span>
                     ) : result.status === "COMPLETED" ? (
                       <span className="badge-success">✅ Clean Response</span>
                     ) : (
@@ -132,6 +134,10 @@ export function SideBySideComparison({ run, onClose, onHumanReview }: SideBySide
                           </strong>
                         </div>
                       )}
+                    </div>
+                  ) : result.evalStatus === "FAILED" ? (
+                    <div className="judge-pending">
+                      <span>⚠️ Evaluación fallida: {result.errorMessage || "El juez no devolvió JSON válido."}</span>
                     </div>
                   ) : (
                     <div className="judge-pending">

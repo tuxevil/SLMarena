@@ -212,7 +212,7 @@ async function executeModel(runId: string, resultId: string) {
           isTransient,
         );
         benchmarkStore.setEvaluation(runId, resultId, evaluation);
-        benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED", status: "COMPLETED" });
+        benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED", status: "COMPLETED", errorMessage: null });
       } catch (error) {
         if (latestRun.cancelController.signal.aborted) return;
         console.error("[slmarena] [Evaluation Failed]", {

@@ -91,6 +91,7 @@ function providerForBaseUrl(baseUrl: string | null | undefined): string | undefi
 type ModelBucket = {
   modelName: string;
   totalRuns: number;
+  failedEvals: number;
   tokPerSecList: number[];
   ttftMsList: number[];
   evaluatorCounts: Map<string, number>;
@@ -250,6 +251,7 @@ function buildSnapshot(
         bucket = {
           modelName: res.modelName,
           totalRuns: 0,
+          failedEvals: 0,
           tokPerSecList: [],
           ttftMsList: [],
           evaluatorCounts: new Map(),
@@ -261,6 +263,11 @@ function buildSnapshot(
           },
         };
         byModel.set(res.modelName, bucket);
+      }
+
+      if (res.evalStatus === "FAILED") {
+        bucket.failedEvals += 1;
+        continue;
       }
 
       bucket.totalRuns += 1;
@@ -357,6 +364,7 @@ function buildSnapshot(
       avg_tok_per_sec: avgTok ?? 0,
       avg_ttft_ms: avgTtft ?? 0,
       total_runs: b.totalRuns,
+      failed_evals: b.failedEvals,
       categories,
       category_breakdown: {
         general_stars: generalStars !== null ? Number(generalStars.toFixed(1)) : -1,

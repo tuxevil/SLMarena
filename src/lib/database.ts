@@ -315,6 +315,7 @@ export async function aggregateLeaderboard(options?: {
   type ModelRawBucket = {
     modelName: string;
     runsCount: number;
+    failedEvals: number;
     tokPerSecList: number[];
     ttftMsList: number[];
     qualityStarsList: number[];
@@ -358,6 +359,7 @@ export async function aggregateLeaderboard(options?: {
         bucket = {
           modelName: res.modelName,
           runsCount: 0,
+          failedEvals: 0,
           tokPerSecList: [],
           ttftMsList: [],
           qualityStarsList: [],
@@ -376,6 +378,11 @@ export async function aggregateLeaderboard(options?: {
           indirectFailures: 0,
         };
         byModel.set(res.modelName, bucket);
+      }
+
+      if (res.evalStatus === "FAILED") {
+        bucket.failedEvals += 1;
+        continue;
       }
 
       bucket.runsCount += 1;
@@ -439,6 +446,7 @@ export async function aggregateLeaderboard(options?: {
     modelName: string;
     paramSize: { label: string; value: number };
     totalRuns: number;
+    failedEvals: number;
     avgTokPerSec: number | null;
     avgTtftMs: number | null;
     avgQualityStars: number | null;
@@ -491,6 +499,7 @@ export async function aggregateLeaderboard(options?: {
       modelName: bucket.modelName,
       paramSize: extractParamSize(bucket.modelName),
       totalRuns: bucket.runsCount,
+      failedEvals: bucket.failedEvals,
       avgTokPerSec: avgTok,
       avgTtftMs: avgTtft,
       avgQualityStars: avgQuality,
@@ -528,6 +537,7 @@ export async function aggregateLeaderboard(options?: {
       paramSizeLabel: m.paramSize.label,
       paramSizeValue: m.paramSize.value,
       totalRuns: m.totalRuns,
+      failedEvals: m.failedEvals,
       avgTokPerSec: m.avgTokPerSec,
       avgTtftMs: m.avgTtftMs,
       avgQualityStars: m.avgQualityStars,

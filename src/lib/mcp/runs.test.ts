@@ -69,12 +69,28 @@ describe("checkJobStatus", () => {
       run_id: string;
       status: string;
       progress_pct: number;
-      partial_metrics: { completed: number; failed: number; total: number; running: number };
+      partial_metrics: { completed: number; failed: number; failed_evals: number; total: number; running: number };
     };
     expect(result.run_id).toBe("run-1");
     expect(result.status).toBe("RUNNING");
     expect(result.progress_pct).toBe(50);
-    expect(result.partial_metrics).toEqual({ completed: 1, failed: 0, total: 2, running: 1 });
+    expect(result.partial_metrics).toEqual({ completed: 1, failed: 0, failed_evals: 0, total: 2, running: 1 });
+  });
+
+  it("counts failed evaluations separately", async () => {
+    const withFailedEval = {
+      ...runFixture,
+      results: [
+        { id: "r1", modelName: "a", status: "COMPLETED", evalStatus: "COMPLETED" },
+        { id: "r2", modelName: "b", status: "COMPLETED", evalStatus: "FAILED" },
+        { id: "r3", modelName: "c", status: "FAILED", evalStatus: "FAILED" },
+      ],
+    };
+    stubFetchSequence([{ match: "/api/runs/", handler: () => ({ run: withFailedEval }) }]);
+    const result = (await checkJobStatus({ job_id: "run-1" })) as {
+      partial_metrics: { completed: number; failed: number; failed_evals: number };
+    };
+    expect(result.partial_metrics).toEqual({ completed: 2, failed: 1, failed_evals: 2, total: 3, running: 0 });
   });
 
   it("reports 100% for completed runs", async () => {

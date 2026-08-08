@@ -202,7 +202,7 @@ export const benchmarkStore = {
       );
 
       benchmarkStore.setEvaluation(runId, resultId, evaluation);
-      benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED" });
+      benchmarkStore.updateResult(runId, resultId, { evalStatus: "COMPLETED", errorMessage: null });
       await appendEvaluationHistory(resultId, evaluation, evaluatorId ?? null);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
