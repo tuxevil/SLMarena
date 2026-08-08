@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the model group summary cards.
 - Horizontal layout for the model score summary: average/range, ratings, and
   telemetry side by side.
+- Default `samplesPerModel=2` (was 1) for new runs: `launch_matrix_test` MCP
+  tool accepts `samples_per_model` (1–10, default 2), `POST /api/runs` and the
+  suites matrix / run wizard UIs default to 2 samples per model per scenario
+  to cut variance in averages; pass 1 explicitly for quick tests.
 - Professional repository metadata: MIT license, governance documents
   (CONTRIBUTING, SECURITY, CODE_OF_CONDUCT), issue and PR templates,
   `.editorconfig`, and `.nvmrc`.

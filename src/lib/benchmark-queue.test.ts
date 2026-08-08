@@ -22,6 +22,7 @@ describe("enqueueBenchmark", () => {
 
     const run = benchmarkStore.createRun({
       ollamaUrl: "http://localhost:11434",
+      samplesPerModel: 1,
       systemPrompt: "Be concise.",
       userMessages: ["Say hello."],
       models: [`test-model-${crypto.randomUUID()}`],
@@ -53,6 +54,7 @@ describe("enqueueBenchmark", () => {
 
     const run = benchmarkStore.createRun({
       ollamaUrl: "http://localhost:11434",
+      samplesPerModel: 1,
       systemPrompt: "Be concise.",
       userMessages: ["First question.", "Second question."],
       models: [`isolated-model-${crypto.randomUUID()}`],
@@ -127,6 +129,7 @@ describe("enqueueBenchmark", () => {
 
     const run = benchmarkStore.createRun({
       ollamaUrl: "http://localhost:11434",
+      samplesPerModel: 1,
       systemPrompt: "Be concise.",
       userMessages: ["Say hello."],
       models: [`empty-model-${crypto.randomUUID()}`],
@@ -159,6 +162,7 @@ describe("enqueueBenchmark", () => {
 
     const run = benchmarkStore.createRun({
       ollamaUrl: "http://localhost:11434",
+      samplesPerModel: 1,
       systemPrompt: "Be concise.",
       userMessages: ["Say hello."],
       models: [`short-model-${crypto.randomUUID()}`],
@@ -189,6 +193,7 @@ describe("enqueueBenchmark", () => {
 
     const run = benchmarkStore.createRun({
       ollamaUrl: "http://localhost:11434",
+      samplesPerModel: 1,
       systemPrompt: "Be concise.",
       userMessages: ["Say hello."],
       models: [`boundary-model-${crypto.randomUUID()}`],
@@ -219,6 +224,7 @@ describe("enqueueBenchmark", () => {
 
     const run = benchmarkStore.createRun({
       ollamaUrl: "http://localhost:11434",
+      samplesPerModel: 1,
       systemPrompt: "Be concise.",
       userMessages: ["Continue."],
       models: [`paused-model-${crypto.randomUUID()}`],

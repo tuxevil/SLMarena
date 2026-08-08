@@ -166,14 +166,37 @@ describe("launchMatrixTest", () => {
       ollamaUrl: string;
       models: string[];
       scenarioId: string;
+      samplesPerModel: number;
       parameters: Record<string, unknown>;
       attackType: string;
     };
     expect(body.ollamaUrl).toBe("http://ollama:11434");
     expect(body.models).toEqual(["m1", "m2"]);
     expect(body.scenarioId).toBe("sc-1");
+    expect(body.samplesPerModel).toBe(2);
     expect(body.parameters.temperature).toBe(0.1);
     expect(body.parameters.numCtx).toBe(4096);
+  });
+
+  it("defaults samples per model to two and honors an explicit override", async () => {
+    let lastBody: { samplesPerModel?: number } | undefined;
+    stubFetchSequence(
+      [
+        { match: "/api/settings", handler: () => settings },
+        { match: "/api/scenarios", handler: () => ({ scenarios }) },
+        { match: "/api/ollama/models", handler: () => ({ models: [{ name: "m1" }] }) },
+      ],
+      (_url, init) => {
+        lastBody = JSON.parse(init?.body as string);
+        return { run: { id: "a" } };
+      },
+    );
+
+    await launchMatrixTest({ target_models: ["m1"], scenario_ids: ["sc-1"] });
+    expect(lastBody!.samplesPerModel).toBe(2);
+
+    await launchMatrixTest({ target_models: ["m1"], scenario_ids: ["sc-1"], samples_per_model: 1 });
+    expect(lastBody!.samplesPerModel).toBe(1);
   });
 
   it("resolves ALL scenarios when scenario_ids contains ALL", async () => {

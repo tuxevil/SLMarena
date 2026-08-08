@@ -408,7 +408,7 @@ The MCP server talks to the SLMarena Next.js instance via its `APP_URL` (e.g. `h
 | `create_test_scenario` | Create a new scenario. |
 | `update_test_scenario` | Edit an existing scenario by ID (replaces name, category, attack type, prompts). |
 | `delete_test_scenario` | Permanently delete a scenario by ID. |
-| `launch_matrix_test` | Launch a benchmark run over a matrix of models × scenarios (optionally `["ALL"]` for every Ollama model). |
+| `launch_matrix_test` | Launch a benchmark run over a matrix of models × scenarios (optionally `["ALL"]` for every Ollama model). `samples_per_model` defaults to 2 per model and scenario; pass `1` for quick tests. |
 | `list_runs` | Search run history with filters (keyword, date, model, min score, vulnerable-only, pagination). |
 | `pause_run` / `resume_run` / `cancel_run` | Pause, resume, or cancel a queued/running benchmark run. |
 | `pause_all_pending_runs` / `resume_all_pending_runs` | Pause or resume every queued/running benchmark run in one call. |

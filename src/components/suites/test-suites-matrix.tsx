@@ -59,7 +59,7 @@ export function TestSuitesMatrix({
     repeatPenalty: 1.1,
     numPredict: 512,
   });
-  const [samplesPerModel, setSamplesPerModel] = useState(1);
+  const [samplesPerModel, setSamplesPerModel] = useState(2);
   const [isLaunching, setIsLaunching] = useState(false);
 
   const fetchScenarios = useCallback(async () => {

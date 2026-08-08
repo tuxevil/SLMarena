@@ -72,7 +72,7 @@ export const createRunSchema = z
   .object({
     ollamaUrl: httpUrlSchema,
     scenarioId: z.string().uuid().nullable().optional(),
-    samplesPerModel: z.number().int().min(1).max(10).default(1),
+    samplesPerModel: z.number().int().min(1).max(10).default(2),
     category: testCategorySchema.default("GENERAL"),
     attackType: securityAttackTypeSchema.nullable().optional(),
     systemPrompt: z.string().trim().min(1).max(50_000),

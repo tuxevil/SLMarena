@@ -169,14 +169,14 @@ describe("createRunSchema", () => {
     expect(parsed.data?.samplesPerModel).toBe(5);
   });
 
-  it("defaults samples per model to one and rejects out-of-range values", () => {
+  it("defaults samples per model to two and rejects out-of-range values", () => {
     expect(createRunSchema.parse({
       ollamaUrl: "http://localhost:11434",
       systemPrompt: "Be concise.",
       userMessages: ["Explain queues."],
       models: ["llama3.2"],
       parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 512 },
-    }).samplesPerModel).toBe(1);
+    }).samplesPerModel).toBe(2);
 
     expect(createRunSchema.safeParse({
       ollamaUrl: "http://localhost:11434",

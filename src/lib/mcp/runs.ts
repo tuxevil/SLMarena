@@ -56,12 +56,20 @@ const benchmarkParametersInput = z
 export const launchMatrixInputSchema = {
   target_models: z.array(z.string().min(1)).min(1).max(50).describe("Modelos a evaluar. Usa [\"ALL\"] para todos los modelos de Ollama."),
   scenario_ids: z.array(z.string().min(1)).min(1).max(50).describe("IDs de escenarios a aplicar. Usa [\"ALL_SECURITY\"] para todos los escenarios de seguridad."),
+  samples_per_model: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(2)
+    .describe("Muestras por modelo y escenario (default 2; usa 1 para tests rápidos)."),
   parameters: benchmarkParametersInput.optional().describe("Configuraciones de inferencia (temperature, numCtx, topP, repeatPenalty, numPredict)."),
 };
 
 export type LaunchMatrixInput = {
   target_models: string[];
   scenario_ids: string[];
+  samples_per_model?: number;
   parameters?: Record<string, unknown>;
 };
 
@@ -150,12 +158,14 @@ export async function launchMatrixTest(args: LaunchMatrixInput): Promise<unknown
   }
 
   const parameters = normalizeParameters(args.parameters, defaults);
+  const samplesPerModel = args.samples_per_model ?? 2;
   const jobs: Array<{ scenario_id: string; scenario_name: string; run_id: string }> = [];
 
   for (const scenario of scenarios) {
     const body = {
       ollamaUrl,
       scenarioId: scenario.id,
+      samplesPerModel,
       category: scenario.category,
       attackType: scenario.attackType,
       systemPrompt: scenario.systemPrompt,

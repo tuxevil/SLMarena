@@ -80,7 +80,7 @@ export function RunWizard({
 
   // Step 2: Models
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [samplesPerModel, setSamplesPerModel] = useState<string>("1");
+  const [samplesPerModel, setSamplesPerModel] = useState<string>("2");
 
   // Step 3: Parameters
   const [showAdvancedParams, setShowAdvancedParams] = useState(false);
