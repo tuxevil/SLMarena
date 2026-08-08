@@ -18,5 +18,10 @@ export async function GET(request: Request) {
   if (!scenarioId && !systemPrompt.trim()) {
     return NextResponse.json({ error: "Provide scenarioId or systemPrompt to identify the scenario." }, { status: 400 });
   }
-  return NextResponse.json(await aggregateScenarioAnalysis({ scenarioId, systemPrompt, userMessages }));
+  try {
+    return NextResponse.json(await aggregateScenarioAnalysis({ scenarioId, systemPrompt, userMessages }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 404 });
+  }
 }

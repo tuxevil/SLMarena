@@ -109,6 +109,42 @@ function contentKey(systemPrompt: string, userMessages: string[]) {
   return `content:${createHash("sha256").update(`${systemPrompt}\u0000${JSON.stringify(userMessages)}`).digest("hex")}`;
 }
 
+export type AnalysisScenarioRef = {
+  scenarioId: string | null;
+  systemPrompt: string;
+  userMessages: string[];
+};
+
+export function resolveScenarioRef(
+  scenarios: Scenario[],
+  input: { scenarioId: string | null; systemPrompt: string; userMessages: string[] },
+): AnalysisScenarioRef {
+  const scenarioId = input.scenarioId;
+  if (!scenarioId) {
+    return { scenarioId: null, systemPrompt: input.systemPrompt, userMessages: input.userMessages };
+  }
+
+  const exact = scenarios.find((scenario) => scenario.id === scenarioId);
+  if (exact) {
+    return { scenarioId: exact.id, systemPrompt: exact.systemPrompt, userMessages: exact.userMessages };
+  }
+
+  const byPrefix = scenarios.filter((scenario) => scenario.id.startsWith(scenarioId));
+  if (byPrefix.length === 1) {
+    const match = byPrefix[0];
+    return { scenarioId: match.id, systemPrompt: match.systemPrompt, userMessages: match.userMessages };
+  }
+  if (byPrefix.length > 1) {
+    throw new Error(
+      `Scenario id "${input.scenarioId}" is ambiguous (matches ${byPrefix.length} scenarios); use the full scenario UUID from list_test_scenarios.`,
+    );
+  }
+
+  // No scenario matches: keep the raw id so runs of a deleted scenario still match.
+  // Unknown ids are rejected in aggregateScenarioAnalysis after the run lookup.
+  return { scenarioId: input.scenarioId, systemPrompt: input.systemPrompt, userMessages: input.userMessages };
+}
+
 export async function aggregateScenarioAnalysis(input: {
   scenarioId: string | null;
   systemPrompt: string;
@@ -117,8 +153,18 @@ export async function aggregateScenarioAnalysis(input: {
   const state = await loadPersistedState();
   if (!state) return { scenarioKey: "", runs: 0, models: [], results: [], bestModel: null };
 
-  const key = scenarioKeyFor(input);
-  const runs = state.runs.filter((entry) => scenarioKeyFor(entry.run) === key);
+  const ref = resolveScenarioRef(state.scenarios, input);
+  const key = scenarioKeyFor(ref);
+  let runs = state.runs.filter((entry) => scenarioKeyFor(entry.run) === key);
+  if (runs.length === 0 && ref.scenarioId) {
+    const contentFallback = contentKey(ref.systemPrompt, ref.userMessages);
+    runs = state.runs.filter((entry) => scenarioKeyFor(entry.run) === contentFallback);
+  }
+  if (runs.length === 0 && input.scenarioId && !state.scenarios.some((scenario) => scenario.id === ref.scenarioId)) {
+    throw new Error(
+      `Scenario id "${input.scenarioId}" not found; use the full scenario UUID from list_test_scenarios or pass system_prompt/user_messages.`,
+    );
+  }
 
   const byModel = new Map<
     string,
