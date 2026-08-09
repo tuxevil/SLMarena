@@ -68,7 +68,7 @@ export type PersistedSettings = {
   parameters: AppSettings["parameters"];
 };
 
-type PersistedRun = {
+export type PersistedRun = {
   run: TestRun;
   config: RunPersistenceConfig;
 };
@@ -1586,3 +1586,26 @@ function dateOrNull(value: string | null) {
 function reportPersistenceError(error: unknown) {
   console.error("[slmarena] database persistence failed", error);
 }
+
+/**
+ * Hydrate a single run by its model_result id. Used as fallback when the
+ * in-memory state.runs Map doesn't know about a result (e.g. backend was
+ * restarted after the run completed). Returns the run plus its
+ * RunPersistenceConfig so the caller can re-register it in memory.
+ */
+export async function loadPersistedStateForResult(resultId: string): Promise<PersistedRun | null> {
+  if (!isPostgres()) return null;
+  const sql = getClient()!;
+  try {
+    const runRow = await sql`SELECT tr.id, tr.category, tr.attack_type, tr.status, tr.paused, tr.control_version, tr.scenario_id, tr.samples_per_model, tr.system_prompt, tr.ollama_url, tr.user_messages, tr.selected_models, tr.parameters, tr.evaluator_config, tr.created_at, tr.updated_at, tr.started_at, tr.finished_at, tr.error_message FROM test_runs tr JOIN model_results mr ON mr.test_run_id = tr.id WHERE mr.id = ${resultId} LIMIT 1`;
+    if (!runRow.length) return null;
+    const full = await loadPersistedState(String(runRow[0].id));
+    if (!full || !full.runs.length) return null;
+    const persistedRun = full.runs[0];
+    return { run: persistedRun.run, config: persistedRun.config };
+  } catch (error) {
+    reportPersistenceError(error);
+    return null;
+  }
+}
+

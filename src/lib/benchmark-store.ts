@@ -22,6 +22,7 @@ import {
   loadPersistedEvaluatorKey,
   loadPersistedSettings,
   loadPersistedState,
+  loadPersistedStateForResult,
   queuePersistedRun,
   deletePersistedScenario,
   persistScenario,
@@ -162,7 +163,13 @@ export const benchmarkStore = {
   },
 
   async reevaluateResult(resultId: string, evaluatorId?: string | null): Promise<TestRun> {
-    const run = benchmarkStore.findResult(resultId);
+    // Try in-memory cache first; if not found, hydrate from DB. This handles
+    // results that completed before the current backend boot (state.runs is
+    // a transient Map populated only by hydrate() at startup).
+    let run = benchmarkStore.findResult(resultId);
+    if (!run) {
+      run = await benchmarkStore.findResultAsync(resultId);
+    }
     if (!run) throw new Error("Result not found.");
     const result = run.results.find((item) => item.id === resultId);
     if (!result) throw new Error("Result not found.");
@@ -455,6 +462,20 @@ export const benchmarkStore = {
       if (run.results.some((result) => result.id === resultId)) {
         return run;
       }
+    }
+    return null;
+  },
+
+  async findResultAsync(resultId: string) {
+    const cached = benchmarkStore.findResult(resultId);
+    if (cached) return cached;
+    // Result is in DB but not hydrated. Load the parent run from DB
+    // (loadPersistedState needs the run id, not the result id) and
+    // restore the run into the in-memory map.
+    const persistedRun = await loadPersistedStateForResult(resultId);
+    if (persistedRun) {
+      restoreRun(persistedRun.run, persistedRun.config);
+      return benchmarkStore.findResult(resultId);
     }
     return null;
   },
