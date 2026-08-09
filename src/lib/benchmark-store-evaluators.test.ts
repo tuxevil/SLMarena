@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { benchmarkStore } from "./benchmark-store";
+import { loadPersistedStateForResult } from "./database";
+import type { PersistedRun } from "./database";
 
 vi.mock("@/lib/database", async () => {
   const evaluatorRows = new Map<
@@ -11,7 +13,7 @@ vi.mock("@/lib/database", async () => {
 
   return {
     loadPersistedState: vi.fn(async () => null),
-    loadPersistedSettings: vi.fn(async () => null),
+    loadPersistedStateForResult: vi.fn(async (): Promise<PersistedRun | null> => null),    loadPersistedSettings: vi.fn(async () => null),
     persistScenario: vi.fn(),
     persistHumanReview: vi.fn(),
     queuePersistedRun: vi.fn(),
@@ -214,6 +216,66 @@ describe("benchmarkStore re-evaluation", () => {
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ evaluatorId: second.id, evaluatorModel: "judge-b", scoreStars: 4 });
     expect(first.id).not.toBe(second.id);
+  });
+
+  it("hydrates a persisted run from the DB when the result is missing from memory", async () => {
+    await benchmarkStore.addEvaluator({ baseUrl: "https://a.example/v1", model: "judge-a", apiKey: "k-a" });
+
+    const resultId = "res-restart-fallback";
+    const persisted: PersistedRun = {
+      run: {
+        id: "run-restart-fallback",
+        category: "GENERAL",
+        attackType: null,
+        status: "COMPLETED",
+        paused: false,
+        controlVersion: 0,
+        scenarioId: null,
+        samplesPerModel: 1,
+        systemPrompt: "Follow rules.",
+        userMessages: ["Hello"],
+        models: ["qwen3:4b"],
+        parameters: { temperature: 0.7, numCtx: 4096, topP: 0.9, repeatPenalty: 1.1, numPredict: 512 },
+        evaluatorModel: "judge-a",
+        results: [
+          {
+            id: resultId,
+            modelName: "qwen3:4b",
+            sampleIndex: 0,
+            status: "COMPLETED",
+            evalStatus: "COMPLETED",
+            responseText: "Stored model response.",
+            turns: [],
+            evaluation: null,
+            humanStatus: "UNREVIEWED",
+            humanNotes: "",
+            errorMessage: null,
+            ttftMs: null,
+            inputTokens: null,
+            outputTokens: null,
+            tokPerSec: null,
+            totalDurationMs: null,
+          },
+        ],
+        createdAt: "2026-08-08T00:00:00.000Z",
+        updatedAt: "2026-08-08T00:00:00.000Z",
+        startedAt: "2026-08-08T00:00:00.000Z",
+        finishedAt: "2026-08-08T00:00:00.000Z",
+        errorMessage: null,
+      },
+      config: { ollamaUrl: "http://localhost:11434", evaluator: undefined },
+    };
+    vi.mocked(loadPersistedStateForResult).mockResolvedValue(persisted);
+    expect(benchmarkStore.getRun("run-restart-fallback")).toBeNull();
+
+    const updatedRun = await benchmarkStore.reevaluateResult(resultId);
+
+    expect(loadPersistedStateForResult).toHaveBeenCalledWith(resultId);
+    const updated = updatedRun.results.find((r) => r.id === resultId);
+    expect(updated?.evalStatus).toBe("COMPLETED");
+    expect(updated?.evaluation?.evaluatorModel).toBe("judge-a");
+    expect(updated?.evaluation?.scoreStars).toBe(4);
+    expect(benchmarkStore.getRun("run-restart-fallback")).not.toBeNull();
   });
 
   it("clears the stale errorMessage after a successful re-evaluation", async () => {
