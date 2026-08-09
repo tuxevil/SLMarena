@@ -33,6 +33,7 @@ The application is built for secure, local, and private model evaluations. It su
 - [HTTP API Overview](#http-api-overview)
 - [MCP Server (Agent Integration)](#mcp-server-agent-integration)
 - [Persistence and Data Model](#persistence-and-data-model)
+- [Public Landing Site](#public-landing-site)
 - [Project Layout](#project-layout)
 - [Development Commands](#development-commands)
 - [Contributing](#contributing)
@@ -67,6 +68,9 @@ The application is structured into **4 independent core modules**, cleanly separ
 - **Automated Frontier Evaluation (LLM-as-a-Judge):** Evaluate outputs automatically using OpenAI-compatible `/chat/completions` endpoints. Receives structured JSON metrics (1–5 star overall score, Grammar, Compliance, Accuracy, and vulnerability breakdown).
 - **Real-Time Token Streaming & Queue Controls:** Stream output token-by-token over Server-Sent Events (SSE) in the Live Monitor, with queue control actions (*Pause*, *Resume*, *Cancel*, *Retry Failed*).
 - **Theme Support (Light / Dark / System):** Native support for Light mode, Dark mode, and OS preference matching without flash of unstyled content (FOUC).
+- **Anomaly Detection Dashboard:** Automatic detection and surfacing of empty/near-zero responses (trimmed length < 15 chars, grouped by model x scenario), failed or stalled evaluations (with one-click re-evaluate), and TPS telemetry outliers (z-score based with Samuelson bound gating). Available in the Monitor module and via `GET /api/anomalies`.
+- **Worker Auto-Recovery:** Orphaned benchmark runs (PENDING/RUNNING with no active BullMQ job) are automatically detected on worker startup and every 5 minutes. Runs are re-enqueued or marked as STALLED after exceeding a bounded retry counter (Redis TTL 7d), preventing infinite retry loops. Stalled evaluations on finished runs are also reconciled.
+- **Data Export:** Export benchmark results as JSON or CSV with optional filters (model, scenario, date range) via `GET /api/export_results`.
 - **Flexible Execution Modes:** Zero-dependency local SQLite setup or enterprise-ready PostgreSQL + Redis BullMQ worker queue architecture.
 - **MCP Server for Agent-Driven Benchmarking:** Expose the SLMarena REST API as Model Context Protocol (MCP) tools and resources so autonomous agents (e.g. Hermes) can read metrics, create test scenarios, and orchestrate matrix benchmarks programmatically.
 
@@ -348,6 +352,7 @@ For multi-user or background worker processing:
 - Monitor local Ollama server health, installed model count, active model loaded in VRAM (via `/api/ps`), and VRAM allocation.
 - View real-time SSE token stream box during inference.
 - Control active runs (*Pause*, *Resume*, *Cancel*, *Retry Failed*).
+- **Anomaly Dashboard:** Three detection panels — *Empty/near-zero responses* (grouped by model x scenario), *Failed evaluations* (orphaned or errored, with one-click re-evaluate), and *TPS telemetry outliers* (z-score > 3.5 with Samuelson bound gating).
 
 ### 4. Settings (`/settings`)
 - Configure Ollama endpoint URL, manage the **evaluator catalog** (register multiple LLM Judge models with their own base URL/API key and mark the one used in evaluations), default inference parameters, and Light/Dark/System theme choices.
@@ -376,6 +381,8 @@ For multi-user or background worker processing:
 | `GET` | `/api/ollama/models` | Discover installed models (`/api/tags`) & active VRAM models (`/api/ps`) from target Ollama instance. |
 | `GET` | `/api/analysis` | Retrieve aggregated scenario metrics across runs. |
 | `GET` | `/api/leaderboard` | Query Arena Leaderboard statistics with custom dynamic weights and filters. |
+| `GET` | `/api/anomalies` | List detected anomalies: empty/near-zero responses, failed evaluations, and TPS telemetry outliers. |
+| `GET` | `/api/export_results` | Export benchmark results as JSON or CSV with optional filters (model, scenario, date range). |
 | `PATCH` | `/api/results/:id/review` | Record human review status (`APPROVED`, `REJECTED`, etc.) and reviewer notes. |
 
 ## MCP Server (Agent Integration)
@@ -439,12 +446,50 @@ Runs, model results, per-turn telemetry, evaluator verdicts, scenarios, and appl
 - **Secrets:** Evaluator API keys are encrypted at rest with AES-256-GCM (`APP_ENCRYPTION_KEY`) — they are stored as `api_key_encrypted` per evaluator and never returned by the API; only a `apiKeyConfigured` boolean is exposed.
 - **Human audit trail:** Each model result carries a review status (`UNREVIEWED`, `REVIEWED`, `APPROVED`, `REJECTED`) and optional reviewer notes via `/api/results/:id/review`.
 
+## Public Landing Site
+
+SLMarena includes a separate **static landing site** (`landing/` npm workspace) that showcases a read-only public snapshot of the Arena Leaderboard, model profiles, security results, and evaluated scenarios. It is deployed at [slmarena.tuxevil.com](https://slmarena.tuxevil.com/).
+
+### Architecture
+
+The landing site is a Next.js static export (`output: "export"`) served by nginx. It consumes a JSON snapshot file (`public-snapshot.json`) generated from the main application's SQLite database.
+
+### Building and Deploying
+
+```bash
+# Export a fresh snapshot from the local database and build the static site
+npm run landing:build
+
+# Development mode for the landing site
+npm run landing:dev
+
+# Export only the snapshot JSON (without building)
+npm run landing:export
+```
+
+The snapshot exporter (`scripts/export-public-snapshot.ts`) reads the SQLite database, aggregates the leaderboard using the same scoring primitives as the main app, and writes the output to `landing/public/data/public-snapshot.json`. Optional environment variables control the hardware rig metadata included in the snapshot: `SNAPSHOT_CPU`, `SNAPSHOT_RAM`, `SNAPSHOT_PROVIDER`, and `SNAPSHOT_OUTPUT`.
+
+### Landing Components
+
+| Component | Purpose |
+| --- | --- |
+| `MasterTable` | Public read-only leaderboard table with model badges and scores |
+| `ModelProfileModal` | Modal view of individual model metrics and history |
+| `LinkedAnalytics` | Scatter plot and radar chart (same linked behavior as the main app) |
+| `ScenariosView` | Browsable list of evaluated scenarios with difficulty tiers |
+| `ExportSection` | Download section for public snapshot data |
+| `Header` / `Navigation` | Landing page chrome and navigation |
+
+### Docker Deployment
+
+The landing site includes a multi-stage Dockerfile (`landing/Dockerfile`) that builds with Node.js 20 Alpine and serves via nginx 1.27 Alpine. Static assets under `_next/static/` are cached for 1 year; snapshot data under `/data/` is cached for 1 hour.
+
 ## Project Layout
 
 ```text
 src/
 ├── app/                        Next.js App Router layout, page routes, CSS, and API routes
-│   ├── api/                    Typed REST API endpoints (/runs, /scenarios, /leaderboard, /ollama/models, etc.)
+│   ├── api/                    Typed REST API endpoints (/runs, /scenarios, /leaderboard, /anomalies, /export_results, etc.)
 │   ├── models/[modelId]/       Level 2 Model Profile page route
 │   ├── monitor/                Live Monitor module page route
 │   ├── settings/               Settings page route
@@ -458,13 +503,15 @@ src/
 │   ├── inspector/              Level 3 Test Inspector slide-over drawer
 │   ├── layout/                 Topbar navigation and theme switcher
 │   ├── models/                 Model dossier profile components
-│   ├── monitor/                Live monitor queue and SSE token stream panel
+│   ├── monitor/                Live monitor panel, anomalies detection dashboard
 │   ├── settings/               Configuration, evaluator catalog, and theme selection panel
 │   ├── suites/                 Test suite creator, canary injector, and matrix orchestrator
 │   ├── benchmark-dashboard.tsx Tabbed leaderboard dashboard (analytics / wizard / history)
+│   ├── consolidated-dashboard.tsx  Alternative consolidated dashboard with inline charts
 │   ├── theme-provider.tsx      Light/Dark/System theme context provider
 │   └── wizard/                 Benchmark setup wizard
 ├── lib/                        Core business logic and integrations
+│   ├── anomalies.ts            Anomaly detection (empty responses, failed evals, TPS outliers)
 │   ├── benchmark-queue.ts      Local queue runner and Redis BullMQ enqueue
 │   ├── benchmark-store.ts      In-memory run state manager & persistence facade
 │   ├── contracts.ts            Zod schemas, domain types, and validation rules
@@ -474,19 +521,24 @@ src/
 │   ├── frontier-evaluator.ts   OpenAI-compatible LLM judge client
 │   ├── mcp/                    MCP server modules: tool handlers, HTTP client, resources, server builder
 │   ├── ollama-client.ts        Streaming Ollama client & telemetry extractor
+│   ├── reconcile-runs.ts       Worker crash-recovery and orphaned run reconciliation
 │   ├── redis-connection.ts     BullMQ / ioredis connection factory
+│   ├── retry.ts                Transient error detection and exponential backoff
 │   ├── run-events.ts           Redis pub/sub helpers backing the SSE run stream
 │   ├── secrets.ts              AES-256-GCM secret encryption utilities
-│   ├── security-templates.ts   Standardized LLM security attack vector templates
+│   ├── security-scoring.ts     Scenario discrimination weights, difficulty tiers, coverage eligibility
+│   ├── security-templates.ts   Standardized LLM security attack vector templates (16 built-in)
 │   └── sqlite-db.ts            Better-SQLite3 initialization, migration engine, and CRUD
 ├── mcp-server.ts               MCP server entry point (Streamable HTTP transport)
 └── worker.ts                   Durable Redis BullMQ background worker entry point
 db/                             PostgreSQL schema (db/schema.sql) for durable mode
 e2e/                            Playwright end-to-end test suites
 integration/                    PostgreSQL and Redis integration tests
+scripts/                        Utility scripts (export-public-snapshot.ts)
+landing/                        Static public landing site (npm workspace, Next.js static export + nginx)
 ```
 
-> Unit tests live alongside their modules under `src/lib/*.test.ts` (`contracts`, `database`/`leaderboard`, `endpoints`, `frontier-evaluator`, `ollama-client`, `benchmark-queue`, `secrets`, `format-bytes`).
+> Unit tests live alongside their modules under `src/lib/*.test.ts` and `src/lib/mcp/*.test.ts` — covering contracts, database aggregations, leaderboard scoring, endpoints, frontier-evaluator, ollama-client, benchmark-queue and recovery, secrets, format-bytes, anomalies, security-scoring, reconcile-runs, and MCP tool handlers (leaderboard, ollama, runs, scenarios/profile, operations).
 
 ## Development Commands
 
@@ -500,6 +552,11 @@ npm run mcp                 # Start MCP server for agent integration (default po
 
 # Database Operations
 npm run db:migrate          # Execute PostgreSQL schema migrations (requires DATABASE_URL)
+
+# Landing Site
+npm run landing:build       # Export snapshot + build static landing site
+npm run landing:dev         # Start landing site development server
+npm run landing:export      # Export public-snapshot.json from local database
 
 # Code Quality & Testing
 npm run lint                # Run ESLint validation

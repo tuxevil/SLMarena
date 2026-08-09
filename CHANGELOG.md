@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (CONTRIBUTING, SECURITY, CODE_OF_CONDUCT), issue and PR templates,
   `.editorconfig`, and `.nvmrc`.
 - MCP server (`npm run mcp`, PRD v2.1): Streamable HTTP transport exposing the
-  SLMarena REST API as 20 tools (`get_arena_leaderboard`, `list_ollama_models`,
+  SLMarena REST API as 26 tools (`get_arena_leaderboard`, `list_ollama_models`,
   `get_model_profile`, `list_test_scenarios`, `get_test_scenario`,
   `create_test_scenario`, `update_test_scenario`, `delete_test_scenario`,
   `list_runs`, `pause_run`, `resume_run`, `cancel_run`,

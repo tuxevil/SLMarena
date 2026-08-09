@@ -27,3 +27,6 @@ test-results/
 
 # heap snapshots
 *.heapsnapshot
+
+# Diagnostic scratch scripts
+diag_*.ts
