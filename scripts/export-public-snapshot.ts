@@ -87,12 +87,18 @@ function average(values: number[]) {
 
 function providerForBaseUrl(baseUrl: string | null | undefined): string | undefined {
   if (!baseUrl) return undefined;
-  const host = baseUrl.toLowerCase().replace(/^https?:\/\//, "").split("/")[0] ?? "";
-  if (host.includes("openai.com")) return "OpenAI";
-  if (host.includes("openrouter.ai")) return "OpenRouter";
-  if (host.includes("anthropic.com")) return "Anthropic";
-  if (host.includes("deepseek.com")) return "DeepSeek";
-  if (host.includes("localhost") || host.includes("127.0.0.1") || host.includes("0.0.0.0")) return "Local";
+  let hostname: string;
+  try {
+    hostname = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+  const is = (domain: string) => hostname === domain || hostname.endsWith(`.${domain}`);
+  if (is("openai.com")) return "OpenAI";
+  if (is("openrouter.ai")) return "OpenRouter";
+  if (is("anthropic.com")) return "Anthropic";
+  if (is("deepseek.com")) return "DeepSeek";
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.startsWith("127.") || hostname === "0.0.0.0" || hostname === "::1") return "Local";
   return undefined;
 }
 
