@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ParameterState } from "@/components/wizard/run-wizard";
 import { useTheme } from "@/components/theme-provider";
 import type { EvaluatorEntry, ModelProvider } from "@/lib/contracts";
@@ -74,7 +74,14 @@ export function SettingsPanel({
   notice,
 }: SettingsPanelProps) {
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const displayTheme = mounted ? theme : "system";
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EvaluatorFormState>(emptyForm);
   const [addForm, setAddForm] = useState<EvaluatorFormState>(emptyForm);
@@ -475,7 +482,7 @@ export function SettingsPanel({
         <div className="theme-options-grid">
           <button
             type="button"
-            className={`theme-option-card ${theme === "light" ? "selected" : ""}`}
+            className={`theme-option-card ${displayTheme === "light" ? "selected" : ""}`}
             onClick={() => setTheme("light")}
           >
             <span className="icon">☀️</span>
@@ -485,7 +492,7 @@ export function SettingsPanel({
 
           <button
             type="button"
-            className={`theme-option-card ${theme === "dark" ? "selected" : ""}`}
+            className={`theme-option-card ${displayTheme === "dark" ? "selected" : ""}`}
             onClick={() => setTheme("dark")}
           >
             <span className="icon">🌙</span>
@@ -495,7 +502,7 @@ export function SettingsPanel({
 
           <button
             type="button"
-            className={`theme-option-card ${theme === "system" ? "selected" : ""}`}
+            className={`theme-option-card ${displayTheme === "system" ? "selected" : ""}`}
             onClick={() => setTheme("system")}
           >
             <span className="icon">💻</span>

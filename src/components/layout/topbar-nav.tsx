@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { ModelProvider, TestRun } from "@/lib/contracts";
 import { useTheme } from "@/components/theme-provider";
@@ -22,7 +23,15 @@ export function TopbarNav({
   activeProvider = "ollama",
 }: TopbarNavProps) {
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const isRunActive = activeRun && ["PENDING", "RUNNING"].includes(activeRun.status);
+
+  const displayTheme = mounted ? theme : "system";
 
   const isAnalyticsActive = activeTab === "analytics";
   const isSuitesActive = activeTab === "suites" || activeTab === "wizard";
@@ -94,7 +103,7 @@ export function TopbarNav({
         <div className="theme-switcher-pill">
           <button
             type="button"
-            className={`theme-btn ${theme === "light" ? "active" : ""}`}
+            className={`theme-btn ${displayTheme === "light" ? "active" : ""}`}
             onClick={() => setTheme("light")}
             title="Light Mode"
           >
@@ -102,7 +111,7 @@ export function TopbarNav({
           </button>
           <button
             type="button"
-            className={`theme-btn ${theme === "dark" ? "active" : ""}`}
+            className={`theme-btn ${displayTheme === "dark" ? "active" : ""}`}
             onClick={() => setTheme("dark")}
             title="Dark Mode"
           >
@@ -110,7 +119,7 @@ export function TopbarNav({
           </button>
           <button
             type="button"
-            className={`theme-btn ${theme === "system" ? "active" : ""}`}
+            className={`theme-btn ${displayTheme === "system" ? "active" : ""}`}
             onClick={() => setTheme("system")}
             title="System Theme"
           >

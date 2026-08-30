@@ -13,15 +13,20 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem("slmarena-theme") as Theme) || "system";
-    }
-    return "system";
-  });
+  const [theme, setThemeState] = useState<Theme>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    const saved = localStorage.getItem("slmarena-theme") as Theme | null;
+    if (saved && (saved === "light" || saved === "dark" || saved === "system")) {
+      setThemeState(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     const root = document.documentElement;
 
     const computeTheme = (t: Theme): "light" | "dark" => {
@@ -33,6 +38,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     const active = computeTheme(theme);
     root.setAttribute("data-theme", active);
+    setResolvedTheme(active);
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = () => {
@@ -56,7 +62,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         mediaQuery.removeListener(handleChange);
       }
     };
-  }, [theme]);
+  }, [theme, mounted]);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
