@@ -57,11 +57,20 @@ import {
 
 export type RunPersistenceConfig = {
   ollamaUrl: string;
+  provider?: import("@/lib/contracts").ModelProvider;
+  providerUrl?: string;
   evaluator?: EvaluatorConfig;
 };
 
 export type PersistedSettings = {
   ollamaUrl: string;
+  freetokenUrl?: string;
+  freetokenApiKey?: string | null;
+  freetokenApiKeyConfigured?: boolean;
+  llamacppUrl?: string;
+  llamacppApiKey?: string | null;
+  llamacppApiKeyConfigured?: boolean;
+  activeProvider?: import("@/lib/contracts").ModelProvider;
   evaluators: EvaluatorEntry[];
   activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
@@ -807,7 +816,7 @@ export async function loadPersistedSettings(): Promise<PersistedSettings | null>
     return sqliteLoadSettings();
   }
   const rows = await getClient()!`
-    SELECT ollama_url, active_evaluator_id, parameters_json
+    SELECT *
     FROM app_settings
     WHERE id = 1
   `;
@@ -817,8 +826,30 @@ export async function loadPersistedSettings(): Promise<PersistedSettings | null>
   const activeEvaluatorId = row.active_evaluator_id ? String(row.active_evaluator_id) : null;
   const active = evaluators.find((evaluator) => evaluator.id === activeEvaluatorId) ?? null;
   const params = parsePersistedParameters(row.parameters_json);
+
+  let freetokenApiKey: string | null = null;
+  if (row.freetoken_api_key_encrypted) {
+    try {
+      freetokenApiKey = decryptSecret(String(row.freetoken_api_key_encrypted));
+    } catch {}
+  }
+
+  let llamacppApiKey: string | null = null;
+  if (row.llamacpp_api_key_encrypted) {
+    try {
+      llamacppApiKey = decryptSecret(String(row.llamacpp_api_key_encrypted));
+    } catch {}
+  }
+
   return {
-    ollamaUrl: String(row.ollama_url),
+    ollamaUrl: String(row.ollama_url || "http://localhost:11434"),
+    freetokenUrl: String(row.freetoken_url || "http://localhost:8000/v1"),
+    freetokenApiKey,
+    freetokenApiKeyConfigured: Boolean(row.freetoken_api_key_encrypted),
+    llamacppUrl: String(row.llamacpp_url || "http://localhost:8080"),
+    llamacppApiKey,
+    llamacppApiKeyConfigured: Boolean(row.llamacpp_api_key_encrypted),
+    activeProvider: (String(row.active_provider || "ollama") as import("@/lib/contracts").ModelProvider),
     evaluators,
     activeEvaluatorId,
     evaluatorApiKey: active ? await loadPersistedEvaluatorKey(active.id) : null,
@@ -932,6 +963,13 @@ function parsePersistedParameters(raw: unknown): import("@/lib/contracts").Bench
 
 export async function persistSettings(settings: {
   ollamaUrl: string;
+  freetokenUrl?: string;
+  freetokenApiKey?: string | null;
+  clearFreetokenApiKey?: boolean;
+  llamacppUrl?: string;
+  llamacppApiKey?: string | null;
+  clearLlamacppApiKey?: boolean;
+  activeProvider?: import("@/lib/contracts").ModelProvider;
   evaluators: EvaluatorEntry[];
   activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
@@ -943,11 +981,46 @@ export async function persistSettings(settings: {
   }
   const active = settings.evaluators.find((evaluator) => evaluator.id === settings.activeEvaluatorId) ?? null;
   const encrypted = settings.evaluatorApiKey ? encryptSecret(settings.evaluatorApiKey) : null;
+  const [existing] = (await getClient()!`SELECT freetoken_api_key_encrypted, llamacpp_api_key_encrypted, freetoken_url, llamacpp_url, active_provider FROM app_settings WHERE id = 1`) as [Record<string, unknown> | undefined];
+
+  let freetokenEncrypted = existing?.freetoken_api_key_encrypted ? String(existing.freetoken_api_key_encrypted) : null;
+  if (settings.clearFreetokenApiKey) {
+    freetokenEncrypted = null;
+  } else if (settings.freetokenApiKey) {
+    freetokenEncrypted = encryptSecret(settings.freetokenApiKey);
+  }
+
+  let llamacppEncrypted = existing?.llamacpp_api_key_encrypted ? String(existing.llamacpp_api_key_encrypted) : null;
+  if (settings.clearLlamacppApiKey) {
+    llamacppEncrypted = null;
+  } else if (settings.llamacppApiKey) {
+    llamacppEncrypted = encryptSecret(settings.llamacppApiKey);
+  }
+
   await getClient()!`
-    INSERT INTO app_settings (id, ollama_url, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, active_evaluator_id, parameters_json, updated_at)
-    VALUES (1, ${settings.ollamaUrl}, ${active?.baseUrl ?? null}, ${active?.model ?? null}, ${encrypted}, ${settings.activeEvaluatorId ?? null}, ${JSON.stringify(settings.parameters)}::jsonb, CURRENT_TIMESTAMP)
+    INSERT INTO app_settings (id, ollama_url, freetoken_url, freetoken_api_key_encrypted, llamacpp_url, llamacpp_api_key_encrypted, active_provider, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, active_evaluator_id, parameters_json, updated_at)
+    VALUES (
+      1,
+      ${settings.ollamaUrl},
+      ${settings.freetokenUrl ?? (existing?.freetoken_url ? String(existing.freetoken_url) : "http://localhost:8000/v1")},
+      ${freetokenEncrypted},
+      ${settings.llamacppUrl ?? (existing?.llamacpp_url ? String(existing.llamacpp_url) : "http://localhost:8080")},
+      ${llamacppEncrypted},
+      ${settings.activeProvider ?? (existing?.active_provider ? String(existing.active_provider) : "ollama")},
+      ${active?.baseUrl ?? null},
+      ${active?.model ?? null},
+      ${encrypted},
+      ${settings.activeEvaluatorId ?? null},
+      ${JSON.stringify(settings.parameters)}::jsonb,
+      CURRENT_TIMESTAMP
+    )
     ON CONFLICT (id) DO UPDATE SET
       ollama_url = EXCLUDED.ollama_url,
+      freetoken_url = EXCLUDED.freetoken_url,
+      freetoken_api_key_encrypted = EXCLUDED.freetoken_api_key_encrypted,
+      llamacpp_url = EXCLUDED.llamacpp_url,
+      llamacpp_api_key_encrypted = EXCLUDED.llamacpp_api_key_encrypted,
+      active_provider = EXCLUDED.active_provider,
       evaluator_base_url = EXCLUDED.evaluator_base_url,
       evaluator_model = EXCLUDED.evaluator_model,
       evaluator_api_key_encrypted = EXCLUDED.evaluator_api_key_encrypted,
@@ -967,8 +1040,8 @@ export async function loadPersistedState(runId?: string): Promise<DatabaseState 
   try {
     const [runRows, resultRows, turnRows, evaluationRows, scenarioRows] = await sql.begin(async (transaction) => Promise.all([
       runId
-        ? transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
-        : transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
+        ? transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, provider, provider_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message FROM test_runs WHERE id = ${runId}`
+        : transaction`SELECT id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, provider, provider_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message FROM test_runs ORDER BY created_at DESC`,
       runId
         ? transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results WHERE test_run_id = ${runId}`
         : transaction`SELECT id, test_run_id, model_name, sample_index, status, eval_status, response_text, input_tokens, output_tokens, ttft_ms, tok_per_sec, total_duration_ms, error_message, human_status, human_notes FROM model_results`,
@@ -1351,8 +1424,8 @@ async function persistRun(run: TestRun, config: RunPersistenceConfig) {
 
   await sql.begin(async (transaction) => {
     await transaction`
-      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message)
-      VALUES (${run.id}, ${run.category ?? "GENERAL"}, ${run.attackType ?? null}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.scenarioId}, ${run.samplesPerModel}, ${run.systemPrompt}, ${config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${new Date(run.updatedAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
+      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, provider, provider_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message)
+      VALUES (${run.id}, ${run.category ?? "GENERAL"}, ${run.attackType ?? null}, ${run.status}, ${run.paused}, ${run.controlVersion}, ${run.scenarioId}, ${run.samplesPerModel}, ${run.systemPrompt}, ${config.ollamaUrl}, ${run.provider ?? config.provider ?? "ollama"}, ${run.providerUrl ?? config.providerUrl ?? config.ollamaUrl}, ${JSON.stringify(run.userMessages)}::jsonb, ${JSON.stringify(run.models)}::jsonb, ${JSON.stringify(run.parameters)}::jsonb, ${evaluatorConfig}::jsonb, ${new Date(run.createdAt)}, ${new Date(run.updatedAt)}, ${dateOrNull(run.startedAt)}, ${dateOrNull(run.finishedAt)}, ${run.errorMessage})
       ON CONFLICT (id) DO UPDATE SET
         category = EXCLUDED.category,
         attack_type = EXCLUDED.attack_type,
@@ -1363,6 +1436,8 @@ async function persistRun(run: TestRun, config: RunPersistenceConfig) {
         samples_per_model = EXCLUDED.samples_per_model,
         system_prompt = EXCLUDED.system_prompt,
         ollama_url = EXCLUDED.ollama_url,
+        provider = EXCLUDED.provider,
+        provider_url = EXCLUDED.provider_url,
         user_messages = EXCLUDED.user_messages,
         selected_models = EXCLUDED.selected_models,
         parameters = EXCLUDED.parameters,
@@ -1413,10 +1488,24 @@ async function persistEvaluation(transaction: TransactionSql, resultId: string, 
   `;
 }
 
+let pgMigrated = false;
+
 function getClient() {
   if (client !== undefined) return client;
   const url = process.env.DATABASE_URL?.trim();
   client = url ? postgres(url, { connect_timeout: 5, idle_timeout: 20, max: 5 }) : null;
+  if (client && !pgMigrated) {
+    pgMigrated = true;
+    client`
+      ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS freetoken_url TEXT;
+      ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS freetoken_api_key_encrypted TEXT;
+      ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS llamacpp_url TEXT;
+      ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS llamacpp_api_key_encrypted TEXT;
+      ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_provider VARCHAR(32) DEFAULT 'ollama';
+      ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS provider VARCHAR(32) DEFAULT 'ollama';
+      ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS provider_url TEXT;
+    `.catch(() => undefined);
+  }
   return client;
 }
 
@@ -1443,6 +1532,8 @@ function groupTurns(rows: Array<Record<string, unknown>>) {
 
 function restoreRun(row: Record<string, unknown>, results: ModelResult[]): PersistedRun {
   const evaluator = parseEvaluatorConfig(row.evaluator_config);
+  const provider = (row.provider as import("@/lib/contracts").ModelProvider) || "ollama";
+  const providerUrl = row.provider_url ? String(row.provider_url) : String(row.ollama_url);
   return {
     run: {
       id: String(row.id),
@@ -1464,8 +1555,10 @@ function restoreRun(row: Record<string, unknown>, results: ModelResult[]): Persi
       startedAt: nullableDateToIso(row.started_at),
       finishedAt: nullableDateToIso(row.finished_at),
       errorMessage: row.error_message ? String(row.error_message) : null,
+      provider,
+      providerUrl,
     },
-    config: { ollamaUrl: String(row.ollama_url), evaluator },
+    config: { ollamaUrl: String(row.ollama_url), provider, providerUrl, evaluator },
   };
 }
 

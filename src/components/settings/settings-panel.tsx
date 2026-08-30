@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ParameterState } from "@/components/wizard/run-wizard";
 import { useTheme } from "@/components/theme-provider";
-import type { EvaluatorEntry } from "@/lib/contracts";
+import type { EvaluatorEntry, ModelProvider } from "@/lib/contracts";
 
 interface EvaluatorFormState {
   label: string;
@@ -15,6 +15,20 @@ interface EvaluatorFormState {
 interface SettingsPanelProps {
   ollamaUrl: string;
   onOllamaUrlChange: (url: string) => void;
+  freetokenUrl?: string;
+  onFreetokenUrlChange?: (url: string) => void;
+  freetokenApiKey?: string;
+  onFreetokenApiKeyChange?: (key: string) => void;
+  freetokenApiKeyConfigured?: boolean;
+  onClearFreetokenApiKey?: () => void;
+  llamacppUrl?: string;
+  onLlamacppUrlChange?: (url: string) => void;
+  llamacppApiKey?: string;
+  onLlamacppApiKeyChange?: (key: string) => void;
+  llamacppApiKeyConfigured?: boolean;
+  onClearLlamacppApiKey?: () => void;
+  activeProvider?: ModelProvider;
+  onActiveProviderChange?: (provider: ModelProvider) => void;
   evaluators: EvaluatorEntry[];
   activeEvaluatorId: string | null;
   onSetActiveEvaluator: (id: string | null) => Promise<void>;
@@ -33,6 +47,20 @@ const emptyForm: EvaluatorFormState = { label: "", baseUrl: "", model: "", apiKe
 export function SettingsPanel({
   ollamaUrl,
   onOllamaUrlChange,
+  freetokenUrl = "http://localhost:8000/v1",
+  onFreetokenUrlChange,
+  freetokenApiKey = "",
+  onFreetokenApiKeyChange,
+  freetokenApiKeyConfigured = false,
+  onClearFreetokenApiKey,
+  llamacppUrl = "http://localhost:8080",
+  onLlamacppUrlChange,
+  llamacppApiKey = "",
+  onLlamacppApiKeyChange,
+  llamacppApiKeyConfigured = false,
+  onClearLlamacppApiKey,
+  activeProvider = "ollama",
+  onActiveProviderChange,
   evaluators,
   activeEvaluatorId,
   onSetActiveEvaluator,
@@ -112,7 +140,7 @@ export function SettingsPanel({
     <form className="settings-panel-form" onSubmit={handleSave}>
       <div className="settings-header">
         <h3>⚙️ System Configuration &amp; Integrations</h3>
-        <p>Adjust local Ollama connection URLs, the LLM Judge evaluator catalog, and default parameters.</p>
+        <p>Adjust local model providers (Ollama, FreeToken, llama.cpp), the LLM Judge evaluator catalog, and default parameters.</p>
       </div>
 
       {notice && <div className="notice-banner">{notice}</div>}
@@ -120,17 +148,114 @@ export function SettingsPanel({
       {formError && <div className="error-banner">{formError}</div>}
 
       <div className="settings-section">
-        <h4>1. Local Ollama Connection</h4>
-        <div className="input-group">
-          <label>Ollama Server URL:</label>
-          <input
-            type="url"
-            value={ollamaUrl}
-            onChange={(e) => onOllamaUrlChange(e.target.value)}
-            placeholder="http://localhost:11434"
-            required
-          />
-          <span className="field-help">Local server hosting SLM models.</span>
+        <h4>1. Local Model Providers</h4>
+        <p className="field-help">Configure connections to local inference servers. Choose the active default provider for benchmarking.</p>
+        
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+          {/* Ollama Provider */}
+          <div className={`evaluator-card ${activeProvider === "ollama" ? "active" : ""}`} style={{ padding: "1rem" }}>
+            <label className="evaluator-radio" style={{ marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input
+                type="radio"
+                name="default-provider"
+                checked={activeProvider === "ollama"}
+                onChange={() => onActiveProviderChange?.("ollama")}
+              />
+              <strong style={{ fontSize: "1rem" }}>🦙 Ollama</strong>
+              {activeProvider === "ollama" && <span className="key-badge configured" style={{ marginLeft: "auto" }}>Active Default</span>}
+            </label>
+            <div className="input-group" style={{ marginBottom: "0.5rem" }}>
+              <label style={{ fontSize: "0.85rem" }}>Server URL:</label>
+              <input
+                type="url"
+                value={ollamaUrl}
+                onChange={(e) => onOllamaUrlChange(e.target.value)}
+                placeholder="http://localhost:11434"
+                required
+              />
+            </div>
+            <span className="field-help" style={{ fontSize: "0.8rem" }}>Default native endpoint for local Ollama instances.</span>
+          </div>
+
+          {/* FreeToken Provider */}
+          <div className={`evaluator-card ${activeProvider === "freetoken" ? "active" : ""}`} style={{ padding: "1rem" }}>
+            <label className="evaluator-radio" style={{ marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input
+                type="radio"
+                name="default-provider"
+                checked={activeProvider === "freetoken"}
+                onChange={() => onActiveProviderChange?.("freetoken")}
+              />
+              <strong style={{ fontSize: "1rem" }}>⚡ FreeToken</strong>
+              {activeProvider === "freetoken" && <span className="key-badge configured" style={{ marginLeft: "auto" }}>Active Default</span>}
+            </label>
+            <div className="input-group" style={{ marginBottom: "0.5rem" }}>
+              <label style={{ fontSize: "0.85rem" }}>Server URL:</label>
+              <input
+                type="url"
+                value={freetokenUrl}
+                onChange={(e) => onFreetokenUrlChange?.(e.target.value)}
+                placeholder="http://localhost:8000/v1"
+              />
+            </div>
+            <div className="input-group" style={{ marginBottom: "0.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label style={{ fontSize: "0.85rem" }}>API Key (optional):</label>
+                {freetokenApiKeyConfigured && onClearFreetokenApiKey && (
+                  <button type="button" className="btn-ghost-sm danger" style={{ padding: "0 0.25rem", fontSize: "0.75rem" }} onClick={onClearFreetokenApiKey}>
+                    Clear key
+                  </button>
+                )}
+              </div>
+              <input
+                type="password"
+                value={freetokenApiKey}
+                onChange={(e) => onFreetokenApiKeyChange?.(e.target.value)}
+                placeholder={freetokenApiKeyConfigured ? "•••••••••••••••• (Configured)" : "Optional key / token"}
+              />
+            </div>
+            <span className="field-help" style={{ fontSize: "0.8rem" }}>OpenAI-compatible local gateway / proxy service.</span>
+          </div>
+
+          {/* llama.cpp Provider */}
+          <div className={`evaluator-card ${activeProvider === "llamacpp" ? "active" : ""}`} style={{ padding: "1rem" }}>
+            <label className="evaluator-radio" style={{ marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input
+                type="radio"
+                name="default-provider"
+                checked={activeProvider === "llamacpp"}
+                onChange={() => onActiveProviderChange?.("llamacpp")}
+              />
+              <strong style={{ fontSize: "1rem" }}>🦙 llama.cpp</strong>
+              {activeProvider === "llamacpp" && <span className="key-badge configured" style={{ marginLeft: "auto" }}>Active Default</span>}
+            </label>
+            <div className="input-group" style={{ marginBottom: "0.5rem" }}>
+              <label style={{ fontSize: "0.85rem" }}>Server URL:</label>
+              <input
+                type="url"
+                value={llamacppUrl}
+                onChange={(e) => onLlamacppUrlChange?.(e.target.value)}
+                placeholder="http://localhost:8080"
+              />
+            </div>
+            <div className="input-group" style={{ marginBottom: "0.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label style={{ fontSize: "0.85rem" }}>API Key (optional):</label>
+                {llamacppApiKeyConfigured && onClearLlamacppApiKey && (
+                  <button type="button" className="btn-ghost-sm danger" style={{ padding: "0 0.25rem", fontSize: "0.75rem" }} onClick={onClearLlamacppApiKey}>
+                    Clear key
+                  </button>
+                )}
+              </div>
+              <input
+                type="password"
+                value={llamacppApiKey}
+                onChange={(e) => onLlamacppApiKeyChange?.(e.target.value)}
+                placeholder={llamacppApiKeyConfigured ? "•••••••••••••••• (Configured)" : "Optional llama-server key"}
+              />
+            </div>
+            <span className="field-help" style={{ fontSize: "0.8rem" }}>High-performance llama-server with telemetry timings.</span>
+          </div>
         </div>
       </div>
 

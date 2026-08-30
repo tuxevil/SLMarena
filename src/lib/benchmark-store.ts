@@ -43,6 +43,8 @@ type RunListener = (event: RunEvent) => void;
 type StoredRun = TestRun & {
   evaluator: CreateRunInput["evaluator"];
   ollamaUrl: string;
+  provider?: import("@/lib/contracts").ModelProvider;
+  providerUrl?: string;
   cancelController: AbortController;
   eventSequence: number;
   listeners: Set<RunListener>;
@@ -97,7 +99,9 @@ export const benchmarkStore = {
       finishedAt: null,
       errorMessage: null,
       evaluator: input.evaluator,
-      ollamaUrl: input.ollamaUrl,
+      ollamaUrl: input.ollamaUrl ?? input.providerUrl ?? state.settings.ollamaUrl,
+      provider: input.provider ?? "ollama",
+      providerUrl: input.providerUrl ?? input.ollamaUrl ?? state.settings.ollamaUrl,
       cancelController: new AbortController(),
       eventSequence: 0,
       listeners: new Set(),
@@ -133,6 +137,11 @@ export const benchmarkStore = {
     const active = state.settings.evaluators.find((evaluator) => evaluator.id === state.settings.activeEvaluatorId) ?? null;
     return {
       ollamaUrl: state.settings.ollamaUrl,
+      freetokenUrl: state.settings.freetokenUrl ?? "http://localhost:8000/v1",
+      freetokenApiKeyConfigured: Boolean(state.settings.freetokenApiKeyConfigured || state.settings.freetokenApiKey),
+      llamacppUrl: state.settings.llamacppUrl ?? "http://localhost:8080",
+      llamacppApiKeyConfigured: Boolean(state.settings.llamacppApiKeyConfigured || state.settings.llamacppApiKey),
+      activeProvider: state.settings.activeProvider ?? "ollama",
       evaluatorBaseUrl: active?.baseUrl ?? "",
       evaluatorModel: active?.model ?? "",
       evaluatorApiKeyConfigured: Boolean(active?.apiKeyConfigured),
@@ -140,6 +149,14 @@ export const benchmarkStore = {
       activeEvaluatorId: state.settings.activeEvaluatorId,
       parameters: state.settings.parameters,
     };
+  },
+
+  async getFreetokenApiKey(): Promise<string | null> {
+    return state.settings.freetokenApiKey ?? null;
+  },
+
+  async getLlamacppApiKey(): Promise<string | null> {
+    return state.settings.llamacppApiKey ?? null;
   },
 
   getEvaluatorConfig(): CreateRunInput["evaluator"] {
@@ -346,6 +363,13 @@ export const benchmarkStore = {
 
   async updateSettings(input: {
     ollamaUrl?: string;
+    freetokenUrl?: string;
+    freetokenApiKey?: string;
+    clearFreetokenApiKey?: boolean;
+    llamacppUrl?: string;
+    llamacppApiKey?: string;
+    clearLlamacppApiKey?: boolean;
+    activeProvider?: import("@/lib/contracts").ModelProvider;
     evaluatorBaseUrl?: string;
     evaluatorModel?: string;
     evaluatorApiKey?: string;
@@ -384,8 +408,29 @@ export const benchmarkStore = {
       }
     }
 
+    let freetokenApiKey = state.settings.freetokenApiKey ?? null;
+    if (input.clearFreetokenApiKey) {
+      freetokenApiKey = null;
+    } else if (input.freetokenApiKey !== undefined) {
+      freetokenApiKey = input.freetokenApiKey.trim() || null;
+    }
+
+    let llamacppApiKey = state.settings.llamacppApiKey ?? null;
+    if (input.clearLlamacppApiKey) {
+      llamacppApiKey = null;
+    } else if (input.llamacppApiKey !== undefined) {
+      llamacppApiKey = input.llamacppApiKey.trim() || null;
+    }
+
     const nextSettings: PersistedSettings = {
       ollamaUrl: input.ollamaUrl ?? state.settings.ollamaUrl,
+      freetokenUrl: input.freetokenUrl ?? state.settings.freetokenUrl,
+      freetokenApiKey,
+      freetokenApiKeyConfigured: Boolean(freetokenApiKey),
+      llamacppUrl: input.llamacppUrl ?? state.settings.llamacppUrl,
+      llamacppApiKey,
+      llamacppApiKeyConfigured: Boolean(llamacppApiKey),
+      activeProvider: input.activeProvider ?? state.settings.activeProvider ?? "ollama",
       evaluators,
       activeEvaluatorId,
       evaluatorApiKey,
@@ -704,7 +749,12 @@ function emit(run: StoredRun, type: string) {
     createdAt: new Date().toISOString(),
   };
 
-  const config: RunPersistenceConfig = { ollamaUrl: run.ollamaUrl, evaluator: run.evaluator };
+  const config: RunPersistenceConfig = {
+    ollamaUrl: run.ollamaUrl,
+    provider: run.provider,
+    providerUrl: run.providerUrl,
+    evaluator: run.evaluator,
+  };
   if (type !== "model.token") {
     queuePersistedRun(snapshot(run, { includeRawJson: true }), type, config);
   }
@@ -714,8 +764,12 @@ function emit(run: StoredRun, type: string) {
 
 function restoreRun(run: TestRun, config: RunPersistenceConfig) {
   const existing = state.runs.get(run.id);
+  const provider = run.provider ?? config.provider ?? "ollama";
+  const providerUrl = run.providerUrl ?? config.providerUrl ?? config.ollamaUrl;
   state.runs.set(run.id, {
     ...run,
+    provider,
+    providerUrl,
     evaluator: config.evaluator,
     ollamaUrl: config.ollamaUrl,
     cancelController: existing?.cancelController ?? new AbortController(),
@@ -750,6 +804,8 @@ function snapshot(run: StoredRun, options: { includeRawJson?: boolean } = {}): T
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
     errorMessage: run.errorMessage,
+    provider: run.provider ?? "ollama",
+    providerUrl: run.providerUrl ?? run.ollamaUrl,
   });
 }
 
@@ -759,17 +815,9 @@ function normalizePersistedSettings(settings: PersistedSettings): PersistedSetti
     evaluatorModel?: string;
     evaluatorApiKeyConfigured?: boolean;
   };
-  if (Array.isArray(legacy.evaluators)) {
-    return {
-      ollamaUrl: legacy.ollamaUrl,
-      evaluators: legacy.evaluators,
-      activeEvaluatorId: legacy.activeEvaluatorId ?? (legacy.evaluators.length > 0 ? legacy.evaluators[0].id : null),
-      evaluatorApiKey: legacy.evaluatorApiKey ?? null,
-      parameters: legacy.parameters,
-    };
-  }
-  const evaluators: EvaluatorEntry[] =
-    legacy.evaluatorBaseUrl && legacy.evaluatorModel
+  const evaluators = Array.isArray(legacy.evaluators)
+    ? legacy.evaluators
+    : legacy.evaluatorBaseUrl && legacy.evaluatorModel
       ? [
           {
             id: "legacy-evaluator",
@@ -780,10 +828,18 @@ function normalizePersistedSettings(settings: PersistedSettings): PersistedSetti
           },
         ]
       : [];
+
   return {
-    ollamaUrl: legacy.ollamaUrl,
+    ollamaUrl: legacy.ollamaUrl || "http://localhost:11434",
+    freetokenUrl: legacy.freetokenUrl || "http://localhost:8000/v1",
+    freetokenApiKey: legacy.freetokenApiKey ?? null,
+    freetokenApiKeyConfigured: Boolean(legacy.freetokenApiKeyConfigured || legacy.freetokenApiKey),
+    llamacppUrl: legacy.llamacppUrl || "http://localhost:8080",
+    llamacppApiKey: legacy.llamacppApiKey ?? null,
+    llamacppApiKeyConfigured: Boolean(legacy.llamacppApiKeyConfigured || legacy.llamacppApiKey),
+    activeProvider: legacy.activeProvider ?? "ollama",
     evaluators,
-    activeEvaluatorId: legacy.activeEvaluatorId ?? (evaluators.length > 0 ? "legacy-evaluator" : null),
+    activeEvaluatorId: legacy.activeEvaluatorId ?? (evaluators.length > 0 ? evaluators[0].id : null),
     evaluatorApiKey: legacy.evaluatorApiKey ?? null,
     parameters: legacy.parameters,
   };
@@ -799,6 +855,13 @@ function defaultSettings(): PersistedSettings {
       : [];
   return {
     ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
+    freetokenUrl: process.env.FREETOKEN_URL ?? "http://localhost:8000/v1",
+    freetokenApiKey: process.env.FREETOKEN_API_KEY ?? null,
+    freetokenApiKeyConfigured: Boolean(process.env.FREETOKEN_API_KEY),
+    llamacppUrl: process.env.LLAMACPP_URL ?? "http://localhost:8080",
+    llamacppApiKey: process.env.LLAMACPP_API_KEY ?? null,
+    llamacppApiKeyConfigured: Boolean(process.env.LLAMACPP_API_KEY),
+    activeProvider: "ollama",
     evaluators,
     activeEvaluatorId: evaluators.length > 0 ? "env-evaluator" : null,
     evaluatorApiKey: envKey,

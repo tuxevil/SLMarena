@@ -68,9 +68,15 @@ export type EvaluatorEntry = {
   apiKeyConfigured: boolean;
 };
 
+export const modelProviderSchema = z.enum(["ollama", "freetoken", "llamacpp"]);
+export type ModelProvider = z.infer<typeof modelProviderSchema>;
+export const MODEL_PROVIDERS = ["ollama", "freetoken", "llamacpp"] as const;
+
 export const createRunSchema = z
   .object({
-    ollamaUrl: httpUrlSchema,
+    provider: modelProviderSchema.default("ollama").optional(),
+    providerUrl: httpUrlSchema.optional(),
+    ollamaUrl: httpUrlSchema.optional(),
     scenarioId: z.string().uuid().nullable().optional(),
     samplesPerModel: z.number().int().min(1).max(10).default(2),
     category: testCategorySchema.default("GENERAL"),
@@ -84,6 +90,23 @@ export const createRunSchema = z
       .refine((models) => new Set(models).size === models.length, "Models must be unique."),
     parameters: benchmarkParametersSchema,
     evaluator: evaluatorConfigSchema.optional(),
+  })
+  .refine(
+    (data) => Boolean(data.ollamaUrl || data.providerUrl),
+    {
+      message: "An endpoint URL is required.",
+      path: ["providerUrl"],
+    }
+  )
+  .transform((data) => {
+    const provider = data.provider ?? "ollama";
+    const resolvedUrl = data.providerUrl ?? data.ollamaUrl!;
+    return {
+      ...data,
+      provider,
+      ollamaUrl: resolvedUrl,
+      providerUrl: resolvedUrl,
+    };
   })
   .refine(
     (data) => data.category !== "SECURITY" || Boolean(data.attackType),
@@ -106,6 +129,21 @@ export type ReevaluateInput = z.infer<typeof reevaluateSchema>;
 
 export const settingsUpdateSchema = z.object({
   ollamaUrl: httpUrlSchema.optional(),
+  freetokenUrl: httpUrlSchema.optional(),
+  freetokenApiKey: z
+    .string()
+    .max(4_096)
+    .nullish()
+    .transform((value) => value ?? undefined),
+  clearFreetokenApiKey: z.boolean().default(false),
+  llamacppUrl: httpUrlSchema.optional(),
+  llamacppApiKey: z
+    .string()
+    .max(4_096)
+    .nullish()
+    .transform((value) => value ?? undefined),
+  clearLlamacppApiKey: z.boolean().default(false),
+  activeProvider: modelProviderSchema.optional(),
   evaluatorBaseUrl: z
     .union([
       z.literal(""),
@@ -206,10 +244,17 @@ export type TestRun = {
   startedAt: string | null;
   finishedAt: string | null;
   errorMessage: string | null;
+  provider?: ModelProvider;
+  providerUrl?: string;
 };
 
 export type AppSettings = {
   ollamaUrl: string;
+  freetokenUrl: string;
+  freetokenApiKeyConfigured: boolean;
+  llamacppUrl: string;
+  llamacppApiKeyConfigured: boolean;
+  activeProvider: ModelProvider;
   evaluatorBaseUrl: string;
   evaluatorModel: string;
   evaluatorApiKeyConfigured: boolean;

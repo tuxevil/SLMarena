@@ -33,6 +33,11 @@ function initSqliteTables(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS app_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       ollama_url TEXT NOT NULL,
+      freetoken_url TEXT,
+      freetoken_api_key_encrypted TEXT,
+      llamacpp_url TEXT,
+      llamacpp_api_key_encrypted TEXT,
+      active_provider TEXT,
       evaluator_base_url TEXT,
       evaluator_model TEXT,
       evaluator_api_key_encrypted TEXT,
@@ -73,6 +78,8 @@ function initSqliteTables(db: Database.Database) {
       samples_per_model INTEGER NOT NULL DEFAULT 1,
       system_prompt TEXT NOT NULL,
       ollama_url TEXT NOT NULL,
+      provider TEXT DEFAULT 'ollama',
+      provider_url TEXT,
       user_messages TEXT NOT NULL,
       selected_models TEXT NOT NULL,
       parameters TEXT NOT NULL,
@@ -185,6 +192,12 @@ function initSqliteTables(db: Database.Database) {
   if (!runColumns.some((column) => column.name === "updated_at")) {
     migrationDb.exec("ALTER TABLE test_runs ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
   }
+  if (!runColumns.some((column) => column.name === "provider")) {
+    migrationDb.exec("ALTER TABLE test_runs ADD COLUMN provider TEXT DEFAULT 'ollama'");
+  }
+  if (!runColumns.some((column) => column.name === "provider_url")) {
+    migrationDb.exec("ALTER TABLE test_runs ADD COLUMN provider_url TEXT");
+  }
 
   const scenarioColumns = migrationDb.prepare("PRAGMA table_info(scenarios)").all() as SqlRow[];
   if (!scenarioColumns.some((column) => column.name === "category")) {
@@ -281,6 +294,21 @@ function initSqliteTables(db: Database.Database) {
   const settingsColumns = migrationDb.prepare("PRAGMA table_info(app_settings)").all() as SqlRow[];
   if (!settingsColumns.some((column) => column.name === "active_evaluator_id")) {
     migrationDb.exec("ALTER TABLE app_settings ADD COLUMN active_evaluator_id TEXT");
+  }
+  if (!settingsColumns.some((column) => column.name === "freetoken_url")) {
+    migrationDb.exec("ALTER TABLE app_settings ADD COLUMN freetoken_url TEXT");
+  }
+  if (!settingsColumns.some((column) => column.name === "freetoken_api_key_encrypted")) {
+    migrationDb.exec("ALTER TABLE app_settings ADD COLUMN freetoken_api_key_encrypted TEXT");
+  }
+  if (!settingsColumns.some((column) => column.name === "llamacpp_url")) {
+    migrationDb.exec("ALTER TABLE app_settings ADD COLUMN llamacpp_url TEXT");
+  }
+  if (!settingsColumns.some((column) => column.name === "llamacpp_api_key_encrypted")) {
+    migrationDb.exec("ALTER TABLE app_settings ADD COLUMN llamacpp_api_key_encrypted TEXT");
+  }
+  if (!settingsColumns.some((column) => column.name === "active_provider")) {
+    migrationDb.exec("ALTER TABLE app_settings ADD COLUMN active_provider TEXT");
   }
 
   const hasEvaluatorsTable = Number((migrationDb
@@ -527,6 +555,13 @@ export function sqliteLoadEvaluatorKey(id: string): string | null {
 
 export function sqliteLoadSettings(): {
   ollamaUrl: string;
+  freetokenUrl: string;
+  freetokenApiKey: string | null;
+  freetokenApiKeyConfigured: boolean;
+  llamacppUrl: string;
+  llamacppApiKey: string | null;
+  llamacppApiKeyConfigured: boolean;
+  activeProvider: import("@/lib/contracts").ModelProvider;
   evaluators: EvaluatorEntry[];
   activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
@@ -551,8 +586,29 @@ export function sqliteLoadSettings(): {
     } catch {}
   }
 
+  let freetokenApiKey: string | null = null;
+  if (row.freetoken_api_key_encrypted) {
+    try {
+      freetokenApiKey = decryptSecret(String(row.freetoken_api_key_encrypted));
+    } catch {}
+  }
+
+  let llamacppApiKey: string | null = null;
+  if (row.llamacpp_api_key_encrypted) {
+    try {
+      llamacppApiKey = decryptSecret(String(row.llamacpp_api_key_encrypted));
+    } catch {}
+  }
+
   return {
-    ollamaUrl: String(row.ollama_url),
+    ollamaUrl: String(row.ollama_url || "http://localhost:11434"),
+    freetokenUrl: String(row.freetoken_url || "http://localhost:8000/v1"),
+    freetokenApiKey,
+    freetokenApiKeyConfigured: Boolean(row.freetoken_api_key_encrypted),
+    llamacppUrl: String(row.llamacpp_url || "http://localhost:8080"),
+    llamacppApiKey,
+    llamacppApiKeyConfigured: Boolean(row.llamacpp_api_key_encrypted),
+    activeProvider: (String(row.active_provider || "ollama") as import("@/lib/contracts").ModelProvider),
     evaluators,
     activeEvaluatorId,
     evaluatorApiKey: active ? sqliteLoadEvaluatorKey(active.id) : null,
@@ -562,6 +618,13 @@ export function sqliteLoadSettings(): {
 
 export function sqlitePersistSettings(settings: {
   ollamaUrl: string;
+  freetokenUrl?: string;
+  freetokenApiKey?: string | null;
+  clearFreetokenApiKey?: boolean;
+  llamacppUrl?: string;
+  llamacppApiKey?: string | null;
+  clearLlamacppApiKey?: boolean;
+  activeProvider?: import("@/lib/contracts").ModelProvider;
   evaluators: EvaluatorEntry[];
   activeEvaluatorId: string | null;
   evaluatorApiKey: string | null;
@@ -569,11 +632,32 @@ export function sqlitePersistSettings(settings: {
 }) {
   const active = settings.evaluators.find((evaluator) => evaluator.id === settings.activeEvaluatorId) ?? null;
   const encrypted = settings.evaluatorApiKey ? encryptSecret(settings.evaluatorApiKey) : null;
+  const existing = getSqliteDb().prepare("SELECT * FROM app_settings WHERE id = 1").get() as SqlRow | undefined;
+
+  let freetokenEncrypted = existing?.freetoken_api_key_encrypted ? String(existing.freetoken_api_key_encrypted) : null;
+  if (settings.clearFreetokenApiKey) {
+    freetokenEncrypted = null;
+  } else if (settings.freetokenApiKey) {
+    freetokenEncrypted = encryptSecret(settings.freetokenApiKey);
+  }
+
+  let llamacppEncrypted = existing?.llamacpp_api_key_encrypted ? String(existing.llamacpp_api_key_encrypted) : null;
+  if (settings.clearLlamacppApiKey) {
+    llamacppEncrypted = null;
+  } else if (settings.llamacppApiKey) {
+    llamacppEncrypted = encryptSecret(settings.llamacppApiKey);
+  }
+
   getSqliteDb().prepare(`
-    INSERT INTO app_settings (id, ollama_url, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, active_evaluator_id, parameters_json, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO app_settings (id, ollama_url, freetoken_url, freetoken_api_key_encrypted, llamacpp_url, llamacpp_api_key_encrypted, active_provider, evaluator_base_url, evaluator_model, evaluator_api_key_encrypted, active_evaluator_id, parameters_json, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       ollama_url = excluded.ollama_url,
+      freetoken_url = excluded.freetoken_url,
+      freetoken_api_key_encrypted = excluded.freetoken_api_key_encrypted,
+      llamacpp_url = excluded.llamacpp_url,
+      llamacpp_api_key_encrypted = excluded.llamacpp_api_key_encrypted,
+      active_provider = excluded.active_provider,
       evaluator_base_url = excluded.evaluator_base_url,
       evaluator_model = excluded.evaluator_model,
       evaluator_api_key_encrypted = excluded.evaluator_api_key_encrypted,
@@ -582,6 +666,11 @@ export function sqlitePersistSettings(settings: {
       updated_at = excluded.updated_at
   `).run(
     settings.ollamaUrl,
+    settings.freetokenUrl ?? (existing?.freetoken_url ? String(existing.freetoken_url) : "http://localhost:8000/v1"),
+    freetokenEncrypted,
+    settings.llamacppUrl ?? (existing?.llamacpp_url ? String(existing.llamacpp_url) : "http://localhost:8080"),
+    llamacppEncrypted,
+    settings.activeProvider ?? (existing?.active_provider ? String(existing.active_provider) : "ollama"),
     active?.baseUrl ?? null,
     active?.model ?? null,
     encrypted,
@@ -593,7 +682,7 @@ export function sqlitePersistSettings(settings: {
 
 export function sqlitePersistRun(
   run: TestRun,
-  config: { ollamaUrl: string; evaluator?: { baseUrl: string; model: string; apiKey: string } },
+  config: { ollamaUrl: string; provider?: import("@/lib/contracts").ModelProvider; providerUrl?: string; evaluator?: { baseUrl: string; model: string; apiKey: string } },
 ) {
   const db = getSqliteDb();
   const evaluatorConfigJson = config.evaluator
@@ -606,8 +695,8 @@ export function sqlitePersistRun(
 
   const transaction = db.transaction(() => {
     db.prepare(`
-      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (id, category, attack_type, status, paused, control_version, scenario_id, samples_per_model, system_prompt, ollama_url, provider, provider_url, user_messages, selected_models, parameters, evaluator_config, created_at, updated_at, started_at, finished_at, error_message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         category = excluded.category,
         attack_type = excluded.attack_type,
@@ -618,6 +707,8 @@ export function sqlitePersistRun(
         samples_per_model = excluded.samples_per_model,
         system_prompt = excluded.system_prompt,
         ollama_url = excluded.ollama_url,
+        provider = excluded.provider,
+        provider_url = excluded.provider_url,
         user_messages = excluded.user_messages,
         selected_models = excluded.selected_models,
         parameters = excluded.parameters,
@@ -637,6 +728,8 @@ export function sqlitePersistRun(
       run.samplesPerModel,
       run.systemPrompt,
       config.ollamaUrl,
+      run.provider ?? config.provider ?? "ollama",
+      run.providerUrl ?? config.providerUrl ?? config.ollamaUrl,
       JSON.stringify(run.userMessages),
       JSON.stringify(run.models),
       JSON.stringify(run.parameters),
@@ -899,11 +992,15 @@ export function sqliteLoadState(targetRunId?: string) {
       startedAt: row.started_at ? String(row.started_at) : null,
       finishedAt: row.finished_at ? String(row.finished_at) : null,
       errorMessage: row.error_message ? String(row.error_message) : null,
+      provider: (row.provider as import("@/lib/contracts").ModelProvider) || "ollama",
+      providerUrl: row.provider_url ? String(row.provider_url) : String(row.ollama_url),
     };
     return {
       run,
       config: {
         ollamaUrl: String(row.ollama_url),
+        provider: (row.provider as import("@/lib/contracts").ModelProvider) || "ollama",
+        providerUrl: row.provider_url ? String(row.provider_url) : String(row.ollama_url),
         evaluator: evaluatorConfig,
       },
     };

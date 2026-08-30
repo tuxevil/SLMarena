@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { enqueueBenchmark } from "@/lib/benchmark-queue";
 import { benchmarkStore } from "@/lib/benchmark-store";
 import { createRunSchema } from "@/lib/contracts";
-import { validateOllamaEndpoint } from "@/lib/endpoints";
+import { validateProviderEndpoint } from "@/lib/endpoints";
 import { hasDatabase, listPersistedHistory } from "@/lib/database";
 
 export async function GET(request: Request) {
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid benchmark configuration.", details: parsed.error.flatten() }, { status: 400 });
   }
-  const endpointError = validateOllamaEndpoint(parsed.data.ollamaUrl);
+  const endpointError = validateProviderEndpoint(parsed.data.providerUrl, parsed.data.provider);
   if (endpointError) return NextResponse.json({ error: endpointError }, { status: 400 });
 
   const run = benchmarkStore.createRun({

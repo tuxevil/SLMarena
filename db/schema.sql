@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS parameters_json JSONB;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_evaluator_id UUID;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS freetoken_url TEXT;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS freetoken_api_key_encrypted TEXT;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS llamacpp_url TEXT;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS llamacpp_api_key_encrypted TEXT;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_provider VARCHAR(32) DEFAULT 'ollama';
 
 CREATE TABLE IF NOT EXISTS evaluators (
   id UUID PRIMARY KEY,
@@ -72,6 +77,8 @@ ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS paused BOOLEAN NOT NULL DEFAULT F
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS control_version BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS scenario_id UUID;
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS samples_per_model SMALLINT NOT NULL DEFAULT 1;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS provider VARCHAR(32) DEFAULT 'ollama';
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS provider_url TEXT;
 
 CREATE TABLE IF NOT EXISTS model_results (
   id UUID PRIMARY KEY,

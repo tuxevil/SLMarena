@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Scenario, TestCategory, SecurityAttackType, BenchmarkParameters } from "@/lib/contracts";
+import type { Scenario, TestCategory, SecurityAttackType, BenchmarkParameters, ModelProvider } from "@/lib/contracts";
 
 interface TestSuitesMatrixProps {
   ollamaUrl?: string;
+  activeProvider?: ModelProvider;
+  onProviderChange?: (provider: ModelProvider) => void;
   onLaunchRun: (params: {
     category: TestCategory;
     attackType: SecurityAttackType | null;
@@ -14,11 +16,14 @@ interface TestSuitesMatrixProps {
     parameters: BenchmarkParameters;
     samplesPerModel: number;
     scenarioId?: string | null;
+    provider?: ModelProvider;
   }) => Promise<void>;
 }
 
 export function TestSuitesMatrix({
   ollamaUrl = "http://127.0.0.1:11434",
+  activeProvider = "ollama",
+  onProviderChange,
   onLaunchRun,
 }: TestSuitesMatrixProps) {
   // Scenarios state
@@ -77,24 +82,29 @@ export function TestSuitesMatrix({
   const fetchOllamaModels = useCallback(async () => {
     setIsRefreshingModels(true);
     try {
-      const res = await fetch(`/api/ollama/models?url=${encodeURIComponent(ollamaUrl)}`);
+      const res = await fetch(`/api/models?provider=${activeProvider}&url=${encodeURIComponent(ollamaUrl)}`);
       if (res.ok) {
         const data = await res.json();
         const list = data.models ?? [];
         setAvailableModels(list);
         if (list.length > 0) {
-          setOnboardingModel((prev) => (list.some((m: { name: string }) => m.name === prev) ? prev : list[0].name));
-          setSelectedModels((prev) => (prev.length > 0 ? prev : [list[0].name]));
+          if (activeProvider === "freetoken" || activeProvider === "llamacpp") {
+            setOnboardingModel(list[0].name);
+            setSelectedModels([list[0].name]);
+          } else {
+            setOnboardingModel((prev) => (list.some((m: { name: string }) => m.name === prev) ? prev : list[0].name));
+            setSelectedModels((prev) => (prev.length > 0 ? prev : [list[0].name]));
+          }
         }
       }
     } catch (err) {
-      console.error("Failed to fetch Ollama models:", err);
+      console.error("Failed to fetch models:", err);
     } finally {
       setIsRefreshingModels(false);
     }
-  }, [ollamaUrl, setIsRefreshingModels]);
+  }, [ollamaUrl, activeProvider, setIsRefreshingModels]);
 
-  // Load scenarios and local Ollama models on mount
+  // Load scenarios and local models on mount or when activeProvider / url changes
   useEffect(() => {
     let ignore = false;
 
@@ -102,7 +112,7 @@ export function TestSuitesMatrix({
       try {
         const [scRes, modRes] = await Promise.all([
           fetch("/api/scenarios"),
-          fetch(`/api/ollama/models?url=${encodeURIComponent(ollamaUrl)}`),
+          fetch(`/api/models?provider=${activeProvider}&url=${encodeURIComponent(ollamaUrl)}`),
         ]);
 
         if (ignore) return;
@@ -117,8 +127,13 @@ export function TestSuitesMatrix({
           const list = modData.models ?? [];
           setAvailableModels(list);
           if (list.length > 0) {
-            setOnboardingModel((prev) => (list.some((m: { name: string }) => m.name === prev) ? prev : list[0].name));
-            setSelectedModels((prev) => (prev.length > 0 ? prev : [list[0].name]));
+            if (activeProvider === "freetoken" || activeProvider === "llamacpp") {
+              setOnboardingModel(list[0].name);
+              setSelectedModels([list[0].name]);
+            } else {
+              setOnboardingModel((prev) => (list.some((m: { name: string }) => m.name === prev) ? prev : list[0].name));
+              setSelectedModels((prev) => (prev.length > 0 ? prev : [list[0].name]));
+            }
           }
         }
       } catch (err) {
@@ -131,7 +146,7 @@ export function TestSuitesMatrix({
     return () => {
       ignore = true;
     };
-  }, [ollamaUrl]);
+  }, [ollamaUrl, activeProvider]);
 
   // Delete Scenario from Library
   const handleDeleteScenario = async () => {
@@ -151,7 +166,7 @@ export function TestSuitesMatrix({
       });
 
       if (res.ok || res.status === 204) {
-        setSavingNotice("���️ Scenario deleted from library successfully.");
+        setSavingNotice("🗑️ Scenario deleted from library successfully.");
         setTimeout(() => setSavingNotice(null), 3000);
         setSelectedScenarioId(null);
         setScenarioName("");
@@ -254,6 +269,7 @@ export function TestSuitesMatrix({
         parameters,
         samplesPerModel,
         scenarioId: selectedScenarioId,
+        provider: activeProvider,
       });
     } finally {
       setIsLaunching(false);
@@ -263,7 +279,7 @@ export function TestSuitesMatrix({
   // Modo B: Run 1 selected scenario on ALL local models
   const handleRunModoB = async () => {
     if (availableModels.length === 0) {
-      alert("No local Ollama models detected.");
+      alert(`No local models detected for ${activeProvider}.`);
       return;
     }
     const targetScenario = scenarios.find((s) => s.id === updateScenarioId);
@@ -283,6 +299,7 @@ export function TestSuitesMatrix({
         parameters,
         samplesPerModel,
         scenarioId: targetScenario ? targetScenario.id : null,
+        provider: activeProvider,
       });
     } finally {
       setIsLaunching(false);
@@ -306,6 +323,7 @@ export function TestSuitesMatrix({
         parameters,
         samplesPerModel,
         scenarioId: selectedScenarioId,
+        provider: activeProvider,
       });
     } finally {
       setIsLaunching(false);
@@ -469,8 +487,32 @@ export function TestSuitesMatrix({
               onClick={fetchOllamaModels}
               disabled={isRefreshingModels}
             >
-              {isRefreshingModels ? "🔄 Loading..." : "🔄 Refresh Models"}
+              {isRefreshingModels ? "🔄 Loading..." : `🔄 Refresh ${activeProvider === "freetoken" ? "FreeToken" : activeProvider === "llamacpp" ? "llama.cpp" : "Ollama"}`}
             </button>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+            {(["ollama", "freetoken", "llamacpp"] as const).map((p) => {
+              const label = p === "freetoken" ? "⚡ FreeToken" : p === "llamacpp" ? "🦙 llama.cpp" : "🦙 Ollama";
+              const isSelected = activeProvider === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  className={`btn-ghost-sm ${isSelected ? "active" : ""}`}
+                  style={{
+                    padding: "0.25rem 0.6rem",
+                    borderRadius: "6px",
+                    border: isSelected ? "1px solid var(--accent, #3b82f6)" : "1px solid rgba(128,128,128,0.2)",
+                    background: isSelected ? "rgba(59, 130, 246, 0.12)" : "transparent",
+                    fontWeight: isSelected ? "600" : "normal",
+                    fontSize: "0.8rem",
+                  }}
+                  onClick={() => onProviderChange?.(p)}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
           <p className="sub">Run batch benchmarks with rapid automation modes.</p>
         </div>

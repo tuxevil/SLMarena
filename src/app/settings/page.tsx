@@ -3,10 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { TopbarNav } from "@/components/layout/topbar-nav";
 import { SettingsPanel } from "@/components/settings/settings-panel";
-import type { EvaluatorEntry } from "@/lib/contracts";
+import type { EvaluatorEntry, ModelProvider } from "@/lib/contracts";
 
 export default function SettingsPage() {
   const [ollamaUrl, setOllamaUrl] = useState("http://127.0.0.1:11434");
+  const [freetokenUrl, setFreetokenUrl] = useState("http://localhost:8000/v1");
+  const [freetokenApiKey, setFreetokenApiKey] = useState("");
+  const [freetokenApiKeyConfigured, setFreetokenApiKeyConfigured] = useState(false);
+  const [llamacppUrl, setLlamacppUrl] = useState("http://localhost:8080");
+  const [llamacppApiKey, setLlamacppApiKey] = useState("");
+  const [llamacppApiKeyConfigured, setLlamacppApiKeyConfigured] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<ModelProvider>("ollama");
+
   const [evaluators, setEvaluators] = useState<EvaluatorEntry[]>([]);
   const [activeEvaluatorId, setActiveEvaluatorId] = useState<string | null>(null);
   const [parameters, setParameters] = useState({
@@ -27,6 +35,12 @@ export default function SettingsPage() {
           const data = await res.json();
           if (data.settings) {
             setOllamaUrl(data.settings.ollamaUrl || "http://127.0.0.1:11434");
+            setFreetokenUrl(data.settings.freetokenUrl || "http://localhost:8000/v1");
+            setFreetokenApiKeyConfigured(Boolean(data.settings.freetokenApiKeyConfigured));
+            setLlamacppUrl(data.settings.llamacppUrl || "http://localhost:8080");
+            setLlamacppApiKeyConfigured(Boolean(data.settings.llamacppApiKeyConfigured));
+            setActiveProvider(data.settings.activeProvider || "ollama");
+
             setEvaluators(data.settings.evaluators ?? []);
             setActiveEvaluatorId(data.settings.activeEvaluatorId ?? null);
             if (data.settings.parameters) {
@@ -109,6 +123,9 @@ export default function SettingsPage() {
     try {
       const payload: Record<string, unknown> = {
         ollamaUrl,
+        freetokenUrl,
+        llamacppUrl,
+        activeProvider,
         parameters: {
           temperature: Number(parameters.temperature),
           numCtx: Number(parameters.numCtx),
@@ -117,6 +134,13 @@ export default function SettingsPage() {
           numPredict: Number(parameters.numPredict),
         },
       };
+
+      if (freetokenApiKey.trim()) {
+        payload.freetokenApiKey = freetokenApiKey.trim();
+      }
+      if (llamacppApiKey.trim()) {
+        payload.llamacppApiKey = llamacppApiKey.trim();
+      }
 
       const res = await fetch("/api/settings", {
         method: "PATCH",
@@ -127,6 +151,14 @@ export default function SettingsPage() {
       if (!res.ok) {
         const err = await res.json();
         setNotice(err.error || "Could not save settings.");
+      } else {
+        const data = await res.json();
+        if (data.settings) {
+          setFreetokenApiKeyConfigured(Boolean(data.settings.freetokenApiKeyConfigured));
+          setLlamacppApiKeyConfigured(Boolean(data.settings.llamacppApiKeyConfigured));
+          setFreetokenApiKey("");
+          setLlamacppApiKey("");
+        }
       }
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -136,12 +168,27 @@ export default function SettingsPage() {
     }
   };
 
+  const currentEndpoint =
+    activeProvider === "freetoken" ? freetokenUrl : activeProvider === "llamacpp" ? llamacppUrl : ollamaUrl;
+
   return (
     <main className="shell">
-      <TopbarNav activeTab="settings" ollamaUrl={ollamaUrl} />
+      <TopbarNav activeTab="settings" ollamaUrl={currentEndpoint} activeProvider={activeProvider} />
       <SettingsPanel
         ollamaUrl={ollamaUrl}
         onOllamaUrlChange={setOllamaUrl}
+        freetokenUrl={freetokenUrl}
+        onFreetokenUrlChange={setFreetokenUrl}
+        freetokenApiKey={freetokenApiKey}
+        onFreetokenApiKeyChange={setFreetokenApiKey}
+        freetokenApiKeyConfigured={freetokenApiKeyConfigured}
+        llamacppUrl={llamacppUrl}
+        onLlamacppUrlChange={setLlamacppUrl}
+        llamacppApiKey={llamacppApiKey}
+        onLlamacppApiKeyChange={setLlamacppApiKey}
+        llamacppApiKeyConfigured={llamacppApiKeyConfigured}
+        activeProvider={activeProvider}
+        onActiveProviderChange={setActiveProvider}
         evaluators={evaluators}
         activeEvaluatorId={activeEvaluatorId}
         onSetActiveEvaluator={handleSetActiveEvaluator}

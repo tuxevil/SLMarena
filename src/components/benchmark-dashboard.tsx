@@ -5,6 +5,7 @@ import type {
   HumanStatus,
   LeaderboardData,
   LeaderboardWeights,
+  ModelProvider,
   Scenario,
   SecurityAttackType,
   TestCategory,
@@ -24,6 +25,11 @@ import { SettingsPanel } from "@/components/settings/settings-panel";
 type SettingsPayload = {
   settings?: {
     ollamaUrl: string;
+    freetokenUrl?: string;
+    freetokenApiKeyConfigured?: boolean;
+    llamacppUrl?: string;
+    llamacppApiKeyConfigured?: boolean;
+    activeProvider?: ModelProvider;
     evaluators?: Array<{ id: string; label: string; baseUrl: string; model: string; apiKeyConfigured: boolean }>;
     activeEvaluatorId?: string | null;
     parameters?: { temperature: number; numCtx: number; topP: number; repeatPenalty: number; numPredict: number };
@@ -38,6 +44,14 @@ export function BenchmarkDashboard() {
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
+  const [freetokenUrl, setFreetokenUrl] = useState("http://localhost:8000/v1");
+  const [freetokenApiKey, setFreetokenApiKey] = useState("");
+  const [freetokenApiKeyConfigured, setFreetokenApiKeyConfigured] = useState(false);
+  const [llamacppUrl, setLlamacppUrl] = useState("http://localhost:8080");
+  const [llamacppApiKey, setLlamacppApiKey] = useState("");
+  const [llamacppApiKeyConfigured, setLlamacppApiKeyConfigured] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<ModelProvider>("ollama");
+
   const [evaluators, setEvaluators] = useState<Array<{ id: string; label: string; baseUrl: string; model: string; apiKeyConfigured: boolean }>>([]);
   const [activeEvaluatorId, setActiveEvaluatorId] = useState<string | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -115,6 +129,11 @@ export function BenchmarkDashboard() {
       .then((payload) => {
         if (payload.settings) {
           if (payload.settings.ollamaUrl) setOllamaUrl(payload.settings.ollamaUrl);
+          if (payload.settings.freetokenUrl) setFreetokenUrl(payload.settings.freetokenUrl);
+          if (payload.settings.freetokenApiKeyConfigured !== undefined) setFreetokenApiKeyConfigured(payload.settings.freetokenApiKeyConfigured);
+          if (payload.settings.llamacppUrl) setLlamacppUrl(payload.settings.llamacppUrl);
+          if (payload.settings.llamacppApiKeyConfigured !== undefined) setLlamacppApiKeyConfigured(payload.settings.llamacppApiKeyConfigured);
+          if (payload.settings.activeProvider) setActiveProvider(payload.settings.activeProvider);
           if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
           if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
           if (payload.settings.parameters) {
@@ -269,18 +288,23 @@ export function BenchmarkDashboard() {
     setNotice("Editing a draft copy.");
   };
 
+  const currentEndpoint =
+    activeProvider === "freetoken" ? freetokenUrl : activeProvider === "llamacpp" ? llamacppUrl : ollamaUrl;
+
   // Other Handlers
-  const discoverModels = async () => {
+  const discoverModels = async (providerOverride?: ModelProvider) => {
+    const provider = providerOverride ?? activeProvider;
+    const endpoint = provider === "freetoken" ? freetokenUrl : provider === "llamacpp" ? llamacppUrl : ollamaUrl;
     setIsDiscovering(true);
     setNotice("");
     try {
-      const res = await fetch(`/api/ollama/models?url=${encodeURIComponent(ollamaUrl)}`);
+      const res = await fetch(`/api/models?provider=${provider}&url=${encodeURIComponent(endpoint)}`);
       const payload = (await res.json()) as { models?: ModelOption[]; error?: string };
-      if (!res.ok) throw new Error(payload.error ?? "Could not connect to Ollama.");
+      if (!res.ok) throw new Error(payload.error ?? `Could not connect to ${provider}.`);
       setModels(payload.models ?? []);
-      setNotice(`Found ${payload.models?.length ?? 0} local models.`);
+      setNotice(`Found ${payload.models?.length ?? 0} models for ${provider}.`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Error connecting to Ollama.");
+      setNotice(err instanceof Error ? err.message : `Error connecting to ${provider}.`);
     } finally {
       setIsDiscovering(false);
     }
@@ -294,7 +318,12 @@ export function BenchmarkDashboard() {
     selectedModels: string[];
     samplesPerModel: number;
     parameters: ParameterState;
+    provider?: ModelProvider;
   }) => {
+    const provider = input.provider ?? activeProvider;
+    const providerUrl =
+      provider === "freetoken" ? freetokenUrl : provider === "llamacpp" ? llamacppUrl : ollamaUrl;
+
     setIsStarting(true);
     setNotice("");
     try {
@@ -302,7 +331,9 @@ export function BenchmarkDashboard() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          ollamaUrl,
+          provider,
+          providerUrl,
+          ollamaUrl: providerUrl,
           category: input.category,
           attackType: input.attackType,
           scenarioId: selectedScenarioId || null,
@@ -378,24 +409,40 @@ export function BenchmarkDashboard() {
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
+      const payload: Record<string, unknown> = {
+        ollamaUrl,
+        freetokenUrl,
+        llamacppUrl,
+        activeProvider,
+        parameters: {
+          temperature: Number(parameters.temperature),
+          numCtx: Number(parameters.numCtx),
+          topP: Number(parameters.topP),
+          repeatPenalty: Number(parameters.repeatPenalty),
+          numPredict: Number(parameters.numPredict),
+        },
+      };
+
+      if (freetokenApiKey.trim()) {
+        payload.freetokenApiKey = freetokenApiKey.trim();
+      }
+      if (llamacppApiKey.trim()) {
+        payload.llamacppApiKey = llamacppApiKey.trim();
+      }
+
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ollamaUrl,
-          parameters: {
-            temperature: Number(parameters.temperature),
-            numCtx: Number(parameters.numCtx),
-            topP: Number(parameters.topP),
-            repeatPenalty: Number(parameters.repeatPenalty),
-            numPredict: Number(parameters.numPredict),
-          },
-        }),
+        body: JSON.stringify(payload),
       });
-      const payload = (await res.json()) as { settings?: { evaluators?: typeof evaluators; activeEvaluatorId?: string | null }; error?: string };
-      if (!res.ok || !payload.settings) throw new Error(payload.error ?? "Error saving settings.");
-      if (payload.settings.evaluators) setEvaluators(payload.settings.evaluators);
-      if (payload.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(payload.settings.activeEvaluatorId);
+      const data = (await res.json()) as { settings?: SettingsPayload["settings"]; error?: string };
+      if (!res.ok || !data.settings) throw new Error(data.error ?? "Error saving settings.");
+      if (data.settings.evaluators) setEvaluators(data.settings.evaluators);
+      if (data.settings.activeEvaluatorId !== undefined) setActiveEvaluatorId(data.settings.activeEvaluatorId);
+      if (data.settings.freetokenApiKeyConfigured !== undefined) setFreetokenApiKeyConfigured(data.settings.freetokenApiKeyConfigured);
+      if (data.settings.llamacppApiKeyConfigured !== undefined) setLlamacppApiKeyConfigured(data.settings.llamacppApiKeyConfigured);
+      setFreetokenApiKey("");
+      setLlamacppApiKey("");
       setNotice("Settings saved successfully.");
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Error saving settings.");
@@ -472,7 +519,7 @@ export function BenchmarkDashboard() {
   return (
     <div className="app-shell-layout">
       {/* Topbar Navigation */}
-      <TopbarNav activeTab={activeTab} onTabChange={setActiveTab} activeRun={activeRun} ollamaUrl={ollamaUrl} />
+      <TopbarNav activeTab={activeTab} onTabChange={setActiveTab} activeRun={activeRun} ollamaUrl={currentEndpoint} activeProvider={activeProvider} />
 
       {/* Main Workspace Area */}
       <main className="main-content-area">
@@ -538,9 +585,14 @@ export function BenchmarkDashboard() {
         {activeTab === "wizard" && (
           <div className="tab-content wizard-tab">
             <RunWizard
-              ollamaUrl={ollamaUrl}
+              ollamaUrl={currentEndpoint}
+              activeProvider={activeProvider}
+              onProviderChange={(p) => {
+                setActiveProvider(p);
+                void discoverModels(p);
+              }}
               models={models}
-              onDiscoverModels={discoverModels}
+              onDiscoverModels={() => discoverModels(activeProvider)}
               isDiscovering={isDiscovering}
               onStartRun={handleStartRun}
               isStarting={isStarting}
@@ -588,6 +640,18 @@ export function BenchmarkDashboard() {
             <SettingsPanel
               ollamaUrl={ollamaUrl}
               onOllamaUrlChange={setOllamaUrl}
+              freetokenUrl={freetokenUrl}
+              onFreetokenUrlChange={setFreetokenUrl}
+              freetokenApiKey={freetokenApiKey}
+              onFreetokenApiKeyChange={setFreetokenApiKey}
+              freetokenApiKeyConfigured={freetokenApiKeyConfigured}
+              llamacppUrl={llamacppUrl}
+              onLlamacppUrlChange={setLlamacppUrl}
+              llamacppApiKey={llamacppApiKey}
+              onLlamacppApiKeyChange={setLlamacppApiKey}
+              llamacppApiKeyConfigured={llamacppApiKeyConfigured}
+              activeProvider={activeProvider}
+              onActiveProviderChange={setActiveProvider}
               evaluators={evaluators}
               activeEvaluatorId={activeEvaluatorId}
               onSetActiveEvaluator={handleSetActiveEvaluator}

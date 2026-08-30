@@ -241,6 +241,87 @@ describe("enqueueBenchmark", () => {
     expect(completed.status).toBe("COMPLETED");
     expect(completed.paused).toBe(false);
   });
+
+  it("runs a benchmark model using FreeToken provider", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          [
+            'data: {"id":"chatcmpl-ft","choices":[{"delta":{"content":"FreeToken response"}}]}',
+            'data: {"id":"chatcmpl-ft","choices":[{"delta":{"content":" completed."}}]}',
+            'data: {"id":"chatcmpl-ft","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":12,"total_tokens":17}}',
+            "data: [DONE]",
+          ].join("\n\n"),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const run = benchmarkStore.createRun({
+      provider: "freetoken",
+      providerUrl: "http://localhost:8000/v1",
+      samplesPerModel: 1,
+      systemPrompt: "Be concise.",
+      userMessages: ["Hello FreeToken."],
+      models: [`freetoken-model-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    expect(run.provider).toBe("freetoken");
+    expect(run.providerUrl).toBe("http://localhost:8000/v1");
+
+    enqueueBenchmark(run.id);
+    const completed = await waitForRun(run.id);
+    const result = completed.results[0];
+
+    expect(completed.status).toBe("COMPLETED");
+    expect(result.status).toBe("COMPLETED");
+    expect(result.responseText).toBe("FreeToken response completed.");
+    expect(result.inputTokens).toBe(5);
+    expect(result.outputTokens).toBe(12);
+  });
+
+  it("runs a benchmark model using llama.cpp provider with timings", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          [
+            'data: {"choices":[{"delta":{"content":"llama.cpp response"}}]}',
+            'data: {"choices":[{"delta":{"content":" answering."}}]}',
+            'data: {"timings":{"prompt_n":8,"predicted_n":16,"predicted_ms":200,"predicted_per_second":80.0}}',
+            "data: [DONE]",
+          ].join("\n\n"),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const run = benchmarkStore.createRun({
+      provider: "llamacpp",
+      providerUrl: "http://localhost:8080",
+      samplesPerModel: 1,
+      systemPrompt: "Be concise.",
+      userMessages: ["Hello llama.cpp."],
+      models: [`llamacpp-model-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    expect(run.provider).toBe("llamacpp");
+    expect(run.providerUrl).toBe("http://localhost:8080");
+
+    enqueueBenchmark(run.id);
+    const completed = await waitForRun(run.id);
+    const result = completed.results[0];
+
+    expect(completed.status).toBe("COMPLETED");
+    expect(result.status).toBe("COMPLETED");
+    expect(result.responseText).toBe("llama.cpp response answering.");
+    expect(result.inputTokens).toBe(8);
+    expect(result.outputTokens).toBe(16);
+    expect(result.tokPerSec).toBe(80);
+  });
 });
 
 async function waitForRun(id: string) {

@@ -1,17 +1,21 @@
-export function validateOllamaEndpoint(value: string) {
+export function validateProviderEndpoint(value: string, providerName = "Provider") {
   const url = new URL(value);
-  if (url.username || url.password) return "Ollama endpoints cannot contain credentials.";
+  if (url.username || url.password) return `${providerName} endpoints cannot contain credentials.`;
 
   const allowedHosts = configuredHosts();
   if (allowedHosts && !allowedHosts.has(url.hostname.toLowerCase())) {
-    return "This Ollama host is not in ALLOWED_OLLAMA_HOSTS.";
+    return `This ${providerName} host is not in ALLOWED_OLLAMA_HOSTS.`;
   }
 
   if (!allowedHosts && !isTrustedLocalHost(url.hostname)) {
-    return "Use a local/private Ollama host or configure ALLOWED_OLLAMA_HOSTS explicitly.";
+    return `Use a local/private ${providerName} host or configure ALLOWED_OLLAMA_HOSTS explicitly.`;
   }
 
   return null;
+}
+
+export function validateOllamaEndpoint(value: string) {
+  return validateProviderEndpoint(value, "Ollama");
 }
 
 export function validateEvaluatorEndpoint(value: string) {

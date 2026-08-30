@@ -1,6 +1,7 @@
 import { evaluateModelResponse, resolveEvaluationMode } from "@/lib/frontier-evaluator";
 import { benchmarkStore } from "@/lib/benchmark-store";
 import { streamOllamaChat } from "@/lib/ollama-client";
+import { streamOpenAICompatibleChat } from "@/lib/providers/openai-client";
 import { retryTransient, isTransient } from "@/lib/retry";
 import type { Queue as BullQueue } from "bullmq";
 import { redisConnection } from "@/lib/redis-connection";
@@ -128,26 +129,56 @@ async function executeModel(runId: string, resultId: string) {
       if (!activeRun) return;
       let partialResponse = "";
       let lastStreamUpdate = 0;
+      const provider = activeRun.provider ?? "ollama";
+      const endpoint = activeRun.providerUrl || activeRun.ollamaUrl;
+      const apiKey =
+        provider === "freetoken"
+          ? await benchmarkStore.getFreetokenApiKey()
+          : provider === "llamacpp"
+            ? await benchmarkStore.getLlamacppApiKey()
+            : null;
+
       const response = await retryTransient(
         () =>
-          streamOllamaChat({
-            endpoint: activeRun.ollamaUrl,
-            model: result.modelName,
-            messages: [
-              { role: "system", content: activeRun.systemPrompt },
-              { role: "user", content: userMessage },
-            ],
-            parameters: activeRun.parameters,
-            signal: activeRun.cancelController.signal,
-            onToken: (token) => {
-              partialResponse += token;
-              const now = performance.now();
-              if (now - lastStreamUpdate >= 50) {
-                lastStreamUpdate = now;
-                benchmarkStore.updateStreamingResponse(runId, resultId, partialResponse);
-              }
-            },
-          }),
+          provider === "ollama"
+            ? streamOllamaChat({
+                endpoint,
+                model: result.modelName,
+                messages: [
+                  { role: "system", content: activeRun.systemPrompt },
+                  { role: "user", content: userMessage },
+                ],
+                parameters: activeRun.parameters,
+                signal: activeRun.cancelController.signal,
+                onToken: (token) => {
+                  partialResponse += token;
+                  const now = performance.now();
+                  if (now - lastStreamUpdate >= 50) {
+                    lastStreamUpdate = now;
+                    benchmarkStore.updateStreamingResponse(runId, resultId, partialResponse);
+                  }
+                },
+              })
+            : streamOpenAICompatibleChat({
+                endpoint,
+                model: result.modelName,
+                messages: [
+                  { role: "system", content: activeRun.systemPrompt },
+                  { role: "user", content: userMessage },
+                ],
+                parameters: activeRun.parameters,
+                apiKey,
+                providerName: provider === "freetoken" ? "FreeToken" : "llama.cpp",
+                signal: activeRun.cancelController.signal,
+                onToken: (token) => {
+                  partialResponse += token;
+                  const now = performance.now();
+                  if (now - lastStreamUpdate >= 50) {
+                    lastStreamUpdate = now;
+                    benchmarkStore.updateStreamingResponse(runId, resultId, partialResponse);
+                  }
+                },
+              }),
         activeRun.cancelController.signal,
       );
 

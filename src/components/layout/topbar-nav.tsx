@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { TestRun } from "@/lib/contracts";
+import type { ModelProvider, TestRun } from "@/lib/contracts";
 import { useTheme } from "@/components/theme-provider";
 
 export type ActiveTab = "analytics" | "suites" | "monitor" | "settings" | "wizard" | "history";
@@ -11,6 +11,7 @@ interface TopbarNavProps {
   onTabChange?: (tab: ActiveTab) => void;
   activeRun?: TestRun | null;
   ollamaUrl?: string;
+  activeProvider?: ModelProvider;
 }
 
 export function TopbarNav({
@@ -18,6 +19,7 @@ export function TopbarNav({
   onTabChange,
   activeRun = null,
   ollamaUrl = "http://127.0.0.1:11434",
+  activeProvider = "ollama",
 }: TopbarNavProps) {
   const { theme, setTheme } = useTheme();
   const isRunActive = activeRun && ["PENDING", "RUNNING"].includes(activeRun.status);
@@ -26,6 +28,9 @@ export function TopbarNav({
   const isSuitesActive = activeTab === "suites" || activeTab === "wizard";
   const isMonitorActive = activeTab === "monitor" || activeTab === "history";
   const isSettingsActive = activeTab === "settings";
+
+  const providerLabel =
+    activeProvider === "freetoken" ? "FreeToken" : activeProvider === "llamacpp" ? "llama.cpp" : "Ollama";
 
   const handleNav = (tab: ActiveTab) => {
     if (onTabChange) {
@@ -129,7 +134,7 @@ export function TopbarNav({
           <div className="header-status-pill">
             <span className="dot online" />
             <span>
-              Ollama: <code className="mono">{ollamaUrl}</code>
+              {providerLabel}: <code className="mono">{ollamaUrl}</code>
             </span>
           </div>
         )}

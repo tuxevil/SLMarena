@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { Scenario, SecurityAttackType, TestCategory } from "@/lib/contracts";
+import { useEffect, useState } from "react";
+import type { ModelProvider, Scenario, SecurityAttackType, TestCategory } from "@/lib/contracts";
 import { SECURITY_TEMPLATES } from "@/lib/security-templates";
 
 export type ModelOption = {
@@ -19,6 +19,8 @@ export type ParameterState = {
 
 interface RunWizardProps {
   ollamaUrl: string;
+  activeProvider?: ModelProvider;
+  onProviderChange?: (provider: ModelProvider) => void;
   models: ModelOption[];
   onDiscoverModels: () => Promise<void>;
   isDiscovering: boolean;
@@ -30,6 +32,7 @@ interface RunWizardProps {
     selectedModels: string[];
     samplesPerModel: number;
     parameters: ParameterState;
+    provider?: ModelProvider;
   }) => Promise<void>;
   isStarting: boolean;
   // Scenario Library Management
@@ -51,6 +54,8 @@ interface RunWizardProps {
 
 export function RunWizard({
   ollamaUrl,
+  activeProvider = "ollama",
+  onProviderChange,
   models,
   onDiscoverModels,
   isDiscovering,
@@ -82,7 +87,12 @@ export function RunWizard({
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [samplesPerModel, setSamplesPerModel] = useState<string>("2");
 
-  // Step 3: Parameters
+  // Auto-select loaded model when switching to freetoken / llamacpp
+  useEffect(() => {
+    if ((activeProvider === "freetoken" || activeProvider === "llamacpp") && models.length > 0) {
+      setSelectedModels([models[0].name]);
+    }
+  }, [activeProvider, models]);
   const [showAdvancedParams, setShowAdvancedParams] = useState(false);
   const [parameters, setParameters] = useState<ParameterState>({
     temperature: "0.2",
@@ -201,6 +211,7 @@ export function RunWizard({
       selectedModels,
       samplesPerModel: Number(samplesPerModel) || 1,
       parameters,
+      provider: activeProvider,
     });
   };
 
@@ -413,8 +424,34 @@ export function RunWizard({
         <div className="wizard-step-panel">
           <div className="panel-header-row">
             <div>
-              <h3>Step 2: Select SLM Models to Evaluate</h3>
-              <p>Ollama at <code className="mono">{ollamaUrl}</code></p>
+              <h3>Step 2: Select Local Models to Evaluate</h3>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", marginBottom: "0.5rem" }}>
+                {(["ollama", "freetoken", "llamacpp"] as const).map((p) => {
+                  const label = p === "freetoken" ? "⚡ FreeToken" : p === "llamacpp" ? "🦙 llama.cpp" : "🦙 Ollama";
+                  const isSelected = activeProvider === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`btn-ghost-sm ${isSelected ? "active" : ""}`}
+                      style={{
+                        padding: "0.3rem 0.75rem",
+                        borderRadius: "6px",
+                        border: isSelected ? "1px solid var(--accent, #3b82f6)" : "1px solid rgba(128,128,128,0.2)",
+                        background: isSelected ? "rgba(59, 130, 246, 0.12)" : "transparent",
+                        fontWeight: isSelected ? "600" : "normal",
+                      }}
+                      onClick={() => onProviderChange?.(p)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p>
+                {activeProvider === "freetoken" ? "FreeToken" : activeProvider === "llamacpp" ? "llama.cpp" : "Ollama"} at{" "}
+                <code className="mono">{ollamaUrl}</code>
+              </p>
             </div>
             <div className="header-actions">
               <button
@@ -423,7 +460,7 @@ export function RunWizard({
                 onClick={onDiscoverModels}
                 disabled={isDiscovering}
               >
-                {isDiscovering ? "Discovering..." : "🔄 Scan Local Ollama"}
+                {isDiscovering ? "Discovering..." : `🔄 Scan ${activeProvider === "freetoken" ? "FreeToken" : activeProvider === "llamacpp" ? "llama.cpp" : "Ollama"}`}
               </button>
               {models.length > 0 && (
                 <button type="button" className="btn-ghost" onClick={toggleSelectAllModels}>
@@ -435,7 +472,7 @@ export function RunWizard({
 
           {models.length === 0 ? (
             <div className="wizard-empty-models">
-              <p>No local models found in Ollama.</p>
+              <p>No models found for {activeProvider === "freetoken" ? "FreeToken" : activeProvider === "llamacpp" ? "llama.cpp" : "Ollama"}.</p>
               <button type="button" className="btn-primary" onClick={onDiscoverModels} disabled={isDiscovering}>
                 Scan Models
               </button>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { benchmarkStore } from "@/lib/benchmark-store";
 import { settingsUpdateSchema } from "@/lib/contracts";
-import { validateOllamaEndpoint } from "@/lib/endpoints";
+import { validateProviderEndpoint } from "@/lib/endpoints";
 
 export async function GET() {
   await benchmarkStore.hydrate();
@@ -22,7 +22,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid settings.", details: parsed.error.flatten() }, { status: 400 });
   }
   if (parsed.data.ollamaUrl) {
-    const endpointError = validateOllamaEndpoint(parsed.data.ollamaUrl);
+    const endpointError = validateProviderEndpoint(parsed.data.ollamaUrl, "Ollama");
+    if (endpointError) return NextResponse.json({ error: endpointError }, { status: 400 });
+  }
+  if (parsed.data.freetokenUrl) {
+    const endpointError = validateProviderEndpoint(parsed.data.freetokenUrl, "FreeToken");
+    if (endpointError) return NextResponse.json({ error: endpointError }, { status: 400 });
+  }
+  if (parsed.data.llamacppUrl) {
+    const endpointError = validateProviderEndpoint(parsed.data.llamacppUrl, "llama.cpp");
     if (endpointError) return NextResponse.json({ error: endpointError }, { status: 400 });
   }
 
