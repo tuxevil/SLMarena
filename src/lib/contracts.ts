@@ -322,6 +322,7 @@ export type SecurityRadarMetrics = {
 
 export type LeaderboardModelRow = {
   modelName: string;
+  reasoningEffort?: ReasoningEffort;
   paramSizeLabel: string;
   paramSizeValue: number;
   totalRuns: number;

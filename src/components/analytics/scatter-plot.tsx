@@ -90,10 +90,13 @@ export function QualitySpeedScatterPlot({ models }: QualitySpeedScatterPlotProps
           const r = getRadius(m.paramSizeValue);
           const color = colors[idx % colors.length];
           const isHovered = hoveredModel?.modelName === m.modelName;
+          const label = m.reasoningEffort && m.reasoningEffort !== "off"
+            ? `${m.modelName} [CoT:${m.reasoningEffort}]`
+            : m.modelName;
 
           return (
             <g
-              key={m.modelName}
+              key={m.modelName + (m.reasoningEffort ? `::${m.reasoningEffort}` : "")}
               onMouseEnter={() => setHoveredModel(m)}
               onMouseLeave={() => setHoveredModel(null)}
               style={{ cursor: "pointer" }}
@@ -111,12 +114,12 @@ export function QualitySpeedScatterPlot({ models }: QualitySpeedScatterPlotProps
                 x={cx}
                 y={cy - r - 4}
                 fill="var(--ink)"
-                fontSize="10"
+                fontSize="9"
                 fontWeight="600"
                 textAnchor="middle"
                 style={{ pointerEvents: "none" }}
               >
-                {m.modelName}
+                {label}
               </text>
             </g>
           );
@@ -126,7 +129,14 @@ export function QualitySpeedScatterPlot({ models }: QualitySpeedScatterPlotProps
       {/* Tooltip */}
       {hoveredModel && (
         <div className="scatter-tooltip">
-          <div className="title">{hoveredModel.modelName}</div>
+          <div className="title">
+            {hoveredModel.modelName}
+            {hoveredModel.reasoningEffort && hoveredModel.reasoningEffort !== "off" && (
+              <span style={{ fontSize: "0.75rem", color: "var(--accent)", marginLeft: "6px" }}>
+                [CoT: {hoveredModel.reasoningEffort}]
+              </span>
+            )}
+          </div>
           <div>
             Parameters: <span className="mono">{hoveredModel.paramSizeLabel}</span>
           </div>

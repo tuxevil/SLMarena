@@ -75,6 +75,7 @@ export function BenchmarkDashboard() {
   const [leaderboardCategory, setLeaderboardCategory] = useState<"ALL" | "GENERAL" | "SECURITY">("ALL");
   const [leaderboardParamRange, setLeaderboardParamRange] = useState<"All" | "<4B" | "4B-8B" | ">8B">("All");
   const [leaderboardDifficulty, setLeaderboardDifficulty] = useState<"ALL" | "easy" | "medium" | "hard">("ALL");
+  const [leaderboardReasoningEffort, setLeaderboardReasoningEffort] = useState<string>("ALL");
   const [weights, setWeights] = useState<LeaderboardWeights>({ quality: 40, security: 40, speed: 20 });
   const [selectedRadarModels, setSelectedRadarModels] = useState<string[]>([]);
 
@@ -164,6 +165,7 @@ export function BenchmarkDashboard() {
       category: leaderboardCategory,
       paramRange: leaderboardParamRange,
       difficulty: leaderboardDifficulty,
+      reasoningEffort: leaderboardReasoningEffort,
       wq: String(weights.quality),
       ws: String(weights.security),
       wv: String(weights.speed),
@@ -180,7 +182,7 @@ export function BenchmarkDashboard() {
         );
       })
       .catch(() => undefined);
-  }, [leaderboardCategory, leaderboardParamRange, leaderboardDifficulty, weights.quality, weights.security, weights.speed, activeRun?.status, historyRefreshKey]);
+  }, [leaderboardCategory, leaderboardParamRange, leaderboardDifficulty, leaderboardReasoningEffort, weights.quality, weights.security, weights.speed, activeRun?.status, historyRefreshKey]);
 
   // Fetch Runs History
   useEffect(() => {
@@ -545,6 +547,8 @@ export function BenchmarkDashboard() {
               onParamRangeChange={setLeaderboardParamRange}
               difficulty={leaderboardDifficulty}
               onDifficultyChange={setLeaderboardDifficulty}
+              reasoningEffort={leaderboardReasoningEffort}
+              onReasoningEffortChange={setLeaderboardReasoningEffort}
               weights={weights}
               onWeightChange={(key, val) => setWeights((prev) => ({ ...prev, [key]: val }))}
               selectedRadarModels={selectedRadarModels}

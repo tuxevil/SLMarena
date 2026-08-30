@@ -6,6 +6,7 @@ export async function GET(request: Request) {
   const category = url.searchParams.get("category")?.trim() || "ALL";
   const paramRange = url.searchParams.get("paramRange")?.trim() || "All";
   const difficultyRaw = url.searchParams.get("difficulty")?.trim() || "ALL";
+  const reasoningEffort = url.searchParams.get("reasoningEffort")?.trim() || "ALL";
 
   const wqRaw = url.searchParams.get("wq");
   const wsRaw = url.searchParams.get("ws");
@@ -23,6 +24,7 @@ export async function GET(request: Request) {
     difficulty: ["easy", "medium", "hard"].includes(difficultyRaw)
       ? (difficultyRaw as "easy" | "medium" | "hard")
       : "ALL",
+    reasoningEffort,
     weights,
   });
 

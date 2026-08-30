@@ -14,6 +14,8 @@ interface ArenaLeaderboardProps {
   onParamRangeChange: (range: "All" | "<4B" | "4B-8B" | ">8B") => void;
   difficulty?: DifficultyFilter;
   onDifficultyChange?: (difficulty: DifficultyFilter) => void;
+  reasoningEffort?: string;
+  onReasoningEffortChange?: (effort: string) => void;
   weights: LeaderboardWeights;
   onWeightChange: (key: keyof LeaderboardWeights, val: number) => void;
   selectedRadarModels: string[];
@@ -42,6 +44,8 @@ export function ArenaLeaderboard({
   onParamRangeChange,
   difficulty = "ALL",
   onDifficultyChange,
+  reasoningEffort = "ALL",
+  onReasoningEffortChange,
   weights,
   onWeightChange,
   selectedRadarModels,
@@ -166,6 +170,24 @@ export function ArenaLeaderboard({
               <option value="easy">Easy</option>
               <option value="medium">Medium</option>
               <option value="hard">Hard</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <span className="filter-label">CoT:</span>
+            <select
+              value={reasoningEffort}
+              disabled={!onReasoningEffortChange}
+              onChange={(e) => onReasoningEffortChange?.(e.target.value)}
+              title="Filtra por modo de razonamiento (Reasoning Effort)"
+            >
+              <option value="ALL">All Modes</option>
+              <option value="off">Off (Standard)</option>
+              <option value="default">Provider Default</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="max">Max</option>
             </select>
           </div>
 
@@ -297,7 +319,7 @@ export function ArenaLeaderboard({
                 const isChecked = selectedRadarModels.includes(m.modelName);
 
                 return (
-                  <tr key={m.modelName} className={isChecked ? "row-selected" : ""}>
+                  <tr key={m.modelName + (m.reasoningEffort ? `::${m.reasoningEffort}` : "")} className={isChecked ? "row-selected" : ""}>
                     <td style={{ textAlign: "center" }}>
                       <input
                         type="checkbox"
@@ -309,6 +331,36 @@ export function ArenaLeaderboard({
                     <td className="model-cell">
                       <strong className="model-name-text">{m.modelName}</strong>
                       <span className="param-pill">{m.paramSizeLabel} Params</span>
+                      {m.reasoningEffort && m.reasoningEffort !== "off" && (
+                        <span
+                          className="badge info"
+                          style={{
+                            fontSize: "0.68rem",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            marginLeft: "4px",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          🧠 CoT: {m.reasoningEffort}
+                        </span>
+                      )}
+                      {m.reasoningEffort === "off" && (
+                        <span
+                          className="badge"
+                          style={{
+                            fontSize: "0.68rem",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            marginLeft: "4px",
+                            color: "var(--muted)",
+                            border: "1px solid var(--line)",
+                          }}
+                        >
+                          Direct
+                        </span>
+                      )}
                       {getEligibilityBadge(m)}
                     </td>
                     <td style={{ textAlign: "center" }}>

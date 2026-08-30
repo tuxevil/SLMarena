@@ -315,6 +315,7 @@ export async function aggregateLeaderboard(options?: {
   category?: string;
   paramRange?: string;
   difficulty?: ScenarioDifficulty | "ALL";
+  reasoningEffort?: string;
   weights?: Partial<LeaderboardWeights>;
 }): Promise<LeaderboardData> {
   const state = await loadPersistedState();
@@ -380,10 +381,18 @@ export async function aggregateLeaderboard(options?: {
   if (options?.difficulty && options.difficulty !== "ALL") {
     filteredRuns = filteredRuns.filter((r) => runTier.get(r.run.id) === options.difficulty);
   }
+  if (options?.reasoningEffort && options.reasoningEffort !== "ALL") {
+    filteredRuns = filteredRuns.filter((r) => {
+      const runEffort = r.run.parameters?.reasoningEffort ?? "off";
+      return runEffort === options.reasoningEffort;
+    });
+  }
 
   // Gather raw data per model
   type ModelRawBucket = {
+    modelKey: string;
     modelName: string;
+    reasoningEffort: import("@/lib/contracts").ReasoningEffort;
     runsCount: number;
     failedEvals: number;
     tokPerSecList: number[];
@@ -429,6 +438,7 @@ export async function aggregateLeaderboard(options?: {
 
   for (const entry of filteredRuns) {
     uniqueRunIds.add(entry.run.id);
+    const runEffort: import("@/lib/contracts").ReasoningEffort = entry.run.parameters?.reasoningEffort ?? "off";
     for (const res of entry.run.results) {
       if (res.status !== "COMPLETED") continue;
 
@@ -439,10 +449,17 @@ export async function aggregateLeaderboard(options?: {
         if (options.paramRange === ">8B" && param.value <= 8) continue;
       }
 
-      let bucket = byModel.get(res.modelName);
+      // Group by modelName + reasoningEffort when comparing across multiple reasoning modes
+      const modelKey = options?.reasoningEffort && options.reasoningEffort !== "ALL"
+        ? res.modelName
+        : `${res.modelName}::${runEffort}`;
+
+      let bucket = byModel.get(modelKey);
       if (!bucket) {
         bucket = {
+          modelKey,
           modelName: res.modelName,
+          reasoningEffort: runEffort,
           runsCount: 0,
           failedEvals: 0,
           tokPerSecList: [],
@@ -462,7 +479,7 @@ export async function aggregateLeaderboard(options?: {
           indirectAttacks: 0,
           indirectFailures: 0,
         };
-        byModel.set(res.modelName, bucket);
+        byModel.set(modelKey, bucket);
       }
 
       if (res.evalStatus === "FAILED") {
@@ -541,6 +558,7 @@ export async function aggregateLeaderboard(options?: {
   let maxAvgSpeed = 1;
   const modelAverages: Array<{
     modelName: string;
+    reasoningEffort?: import("@/lib/contracts").ReasoningEffort;
     paramSize: { label: string; value: number };
     totalRuns: number;
     failedEvals: number;
@@ -609,6 +627,7 @@ export async function aggregateLeaderboard(options?: {
 
     modelAverages.push({
       modelName: bucket.modelName,
+      reasoningEffort: bucket.reasoningEffort,
       paramSize: extractParamSize(bucket.modelName),
       totalRuns: bucket.runsCount,
       failedEvals: bucket.failedEvals,
@@ -651,6 +670,7 @@ export async function aggregateLeaderboard(options?: {
 
     return {
       modelName: m.modelName,
+      reasoningEffort: m.reasoningEffort,
       paramSizeLabel: m.paramSize.label,
       paramSizeValue: m.paramSize.value,
       totalRuns: m.totalRuns,
@@ -669,7 +689,7 @@ export async function aggregateLeaderboard(options?: {
       qualityScenarioCoverage: m.qualityScenarioCoverage,
       rankingEligible: m.rankingEligible,
       radar: m.radar,
-      arenaIndex: Math.min(100, Math.max(0, arenaIndex)),
+      arenaIndex,
     };
   });
 
