@@ -8,8 +8,6 @@ import { redisConnection } from "@/lib/redis-connection";
 
 type QueueJob = { runId: string; execute: () => Promise<void> };
 
-const MIN_RESPONSE_CHARS = 15;
-
 const pendingJobs: QueueJob[] = [];
 let activeJobs = 0;
 let redisQueue: BullQueue<{ runId: string }> | null = null;
@@ -235,12 +233,13 @@ async function executeModel(runId: string, resultId: string) {
     const responseText = inferredResult?.responseText ?? "";
     const lastTurn = inferredResult?.turns[inferredResult.turns.length - 1];
 
-    if (responseText.trim().length < MIN_RESPONSE_CHARS) {
-      console.warn(`[slmarena] [Inference Failed] ${runId}/${resultId}: response below ${MIN_RESPONSE_CHARS} chars (${responseText.trim().length}).`);
+    if (responseText.trim().length === 0) {
+      const errorReason = lastTurn?.thinking ? "NO_FINAL_ANSWER" : "EMPTY_RESPONSE";
+      console.warn(`[slmarena] [Inference Failed] ${runId}/${resultId}: ${errorReason}.`);
       benchmarkStore.updateResult(runId, resultId, {
         status: "FAILED",
         evalStatus: "FAILED",
-        errorMessage: "EMPTY_RESPONSE",
+        errorMessage: errorReason,
         finishReason: lastTurn?.finishReason ?? null,
         truncated: lastTurn?.truncated ?? false,
       });

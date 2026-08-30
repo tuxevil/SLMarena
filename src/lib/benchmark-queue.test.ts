@@ -172,14 +172,14 @@ describe("enqueueBenchmark", () => {
     expect(result.errorMessage).toBe("EMPTY_RESPONSE");
   });
 
-  it("marks a result as FAILED with EMPTY_RESPONSE when the response is shorter than 15 chars", async () => {
+  it("completes short responses like '391' or 'true' without arbitrary length gating", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
           [
-            JSON.stringify({ message: { content: "short" } }),
-            JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 5, eval_duration: 1_000_000_000, total_duration: 1_000_000_000 }),
+            JSON.stringify({ message: { content: "391" } }),
+            JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 3, eval_duration: 1_000_000_000, total_duration: 1_000_000_000 }),
           ].join("\n"),
           { status: 200 },
         ),
@@ -190,39 +190,8 @@ describe("enqueueBenchmark", () => {
       ollamaUrl: "http://localhost:11434",
       samplesPerModel: 1,
       systemPrompt: "Be concise.",
-      userMessages: ["Say hello."],
-      models: [`short-model-${crypto.randomUUID()}`],
-      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
-    });
-
-    enqueueBenchmark(run.id);
-    const failed = await waitForRun(run.id);
-
-    expect(failed.status).toBe("FAILED");
-    expect(failed.results[0].status).toBe("FAILED");
-    expect(failed.results[0].errorMessage).toBe("EMPTY_RESPONSE");
-  });
-
-  it("completes a result whose response is exactly at the 15-char minimum", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          [
-            JSON.stringify({ message: { content: "0123456789abcde" } }),
-            JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 15, eval_duration: 1_000_000_000, total_duration: 1_000_000_000 }),
-          ].join("\n"),
-          { status: 200 },
-        ),
-      ),
-    );
-
-    const run = benchmarkStore.createRun({
-      ollamaUrl: "http://localhost:11434",
-      samplesPerModel: 1,
-      systemPrompt: "Be concise.",
-      userMessages: ["Say hello."],
-      models: [`boundary-model-${crypto.randomUUID()}`],
+      userMessages: ["Calculate 17 * 23."],
+      models: [`short-math-model-${crypto.randomUUID()}`],
       parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
     });
 
@@ -231,7 +200,7 @@ describe("enqueueBenchmark", () => {
 
     expect(completed.status).toBe("COMPLETED");
     expect(completed.results[0].status).toBe("COMPLETED");
-    expect(completed.results[0].responseText).toBe("0123456789abcde");
+    expect(completed.results[0].responseText).toBe("391");
   });
 
   it("waits while a run is paused and resumes without losing the run", async () => {

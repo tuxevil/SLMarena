@@ -30,8 +30,6 @@ export type OllamaChatResult = Telemetry & {
   truncated: boolean;
 };
 
-const MAX_RETRY_NUM_PREDICT = 8_192;
-
 export async function streamOllamaChat({
   endpoint,
   model,
@@ -48,19 +46,7 @@ export async function streamOllamaChat({
   onToken?: (token: string) => void;
 }): Promise<OllamaChatResult> {
   const startedAt = performance.now();
-  let streamed = await requestChat({ endpoint, model, messages, parameters, signal, onToken });
-
-  if (!streamed.responseText && streamed.finalChunk.done_reason === "length" && parameters.numPredict < MAX_RETRY_NUM_PREDICT) {
-    console.warn("[slmarena] [Ollama] Response truncated while thinking; retrying with a larger token budget.");
-    streamed = await requestChat({
-      endpoint,
-      model,
-      messages,
-      parameters: { ...parameters, numPredict: Math.min(MAX_RETRY_NUM_PREDICT, parameters.numPredict + 2_048) },
-      signal,
-      onToken,
-    });
-  }
+  const streamed = await requestChat({ endpoint, model, messages, parameters, signal, onToken });
 
   const evalDurationMs = durationMs(streamed.finalChunk.eval_duration);
   const outputTokens = streamed.finalChunk.eval_count ?? null;

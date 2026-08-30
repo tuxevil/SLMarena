@@ -81,9 +81,10 @@ describe("streamOllamaChat", () => {
     expect(result.thinking).toBe("Let me reason carefully.");
   });
 
-  it("retries with a larger budget when thinking consumes the whole token limit", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(
+  it("captures finishReason and truncated flags accurately without auto-retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
         new Response(
           [
             JSON.stringify({ message: { thinking: "Long reasoning" } }),
@@ -91,18 +92,8 @@ describe("streamOllamaChat", () => {
           ].join("\n"),
           { status: 200 },
         ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          [
-            JSON.stringify({ message: { thinking: "Short reasoning" } }),
-            JSON.stringify({ message: { content: "The final answer" } }),
-            JSON.stringify({ done: true, done_reason: "stop", eval_count: 20 }),
-          ].join("\n"),
-          { status: 200 },
-        ),
-      );
-    vi.stubGlobal("fetch", fetchMock);
+      ),
+    );
 
     const result = await streamOllamaChat({
       endpoint: "http://localhost:11434",
@@ -118,11 +109,10 @@ describe("streamOllamaChat", () => {
       signal: new AbortController().signal,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const secondBody = JSON.parse(String(fetchMock.mock.calls[1][1].body));
-    expect(secondBody.options.num_predict).toBe(2_560);
-    expect(result.responseText).toBe("The final answer");
-    expect(result.thinking).toBe("Short reasoning");
+    expect(result.responseText).toBe("");
+    expect(result.thinking).toBe("Long reasoning");
+    expect(result.finishReason).toBe("length");
+    expect(result.truncated).toBe(true);
   });
 
   it("preserves missing Ollama telemetry as null", async () => {

@@ -212,12 +212,24 @@ export const benchmarkStore = {
     const currentRun = benchmarkStore.getStoredRun(runId);
     const currentResult = currentRun?.results.find((item) => item.id === resultId);
     try {
+      const transcript = currentResult?.turns && currentResult.turns.length > 0
+        ? currentResult.turns.flatMap((t) => [
+            { role: "user" as const, content: t.userMessage },
+            { role: "assistant" as const, content: t.responseText },
+          ])
+        : undefined;
+      const thinkingText = currentResult?.turns
+        ? currentResult.turns.map((t) => t.thinking).filter(Boolean).join("\n\n")
+        : undefined;
+
       const evaluation = await retryTransient(
         () =>
           evaluateModelResponse({
             config,
             systemPrompt: currentRun?.systemPrompt ?? run.systemPrompt,
             userMessages: currentRun?.userMessages ?? run.userMessages,
+            transcript,
+            thinkingText,
             responseText: currentResult?.responseText ?? result.responseText ?? "",
             modelName: result.modelName,
             signal: AbortSignal.timeout(300_000),
