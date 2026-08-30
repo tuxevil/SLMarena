@@ -259,13 +259,22 @@ export function TestSuitesMatrix({
       alert("Please select a model.");
       return;
     }
-    if (scenarios.length === 0) {
-      alert("No scenarios available in the library.");
-      return;
-    }
+    const targetScenarios =
+      scenarios.length > 0
+        ? scenarios
+        : [
+            {
+              id: selectedScenarioId || null,
+              category,
+              attackType,
+              systemPrompt,
+              userMessages,
+            },
+          ];
+
     setIsLaunching(true);
     try {
-      for (const sc of scenarios) {
+      for (const sc of targetScenarios) {
         await onLaunchRun({
           category: sc.category,
           attackType: sc.category === "SECURITY" ? sc.attackType || "INSTRUCTION_OVERRIDE" : null,

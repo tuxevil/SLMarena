@@ -133,7 +133,7 @@ test.beforeEach(async ({ page }) => {
       },
     });
   });
-  await page.route(/\/api\/ollama\/models/, async (route) => {
+  await page.route(/\/api\/(?:ollama\/)?models/, async (route) => {
     await route.fulfill({ json: { models: [{ name: "llama3.2", size: "4 GB" }] } });
   });
   await page.route(/\/api\/runs$/, async (route) => {
