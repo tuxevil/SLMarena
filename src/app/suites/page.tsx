@@ -74,7 +74,9 @@ export default function SuitesPage() {
       if (res.ok) {
         const data = await res.json();
         setActiveRun(data.run);
-        router.push("/monitor");
+        if (!window.location.pathname.includes("/monitor")) {
+          router.push("/monitor");
+        }
       } else {
         const err = await res.json();
         alert(`Error starting benchmark: ${err.error || "Unknown error"}`);

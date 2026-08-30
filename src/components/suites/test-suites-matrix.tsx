@@ -259,19 +259,25 @@ export function TestSuitesMatrix({
       alert("Please select a model.");
       return;
     }
+    if (scenarios.length === 0) {
+      alert("No scenarios available in the library.");
+      return;
+    }
     setIsLaunching(true);
     try {
-      await onLaunchRun({
-        category,
-        attackType: category === "SECURITY" ? attackType || "INSTRUCTION_OVERRIDE" : null,
-        systemPrompt,
-        userMessages,
-        models: [onboardingModel],
-        parameters,
-        samplesPerModel,
-        scenarioId: selectedScenarioId,
-        provider: activeProvider,
-      });
+      for (const sc of scenarios) {
+        await onLaunchRun({
+          category: sc.category,
+          attackType: sc.category === "SECURITY" ? sc.attackType || "INSTRUCTION_OVERRIDE" : null,
+          systemPrompt: sc.systemPrompt,
+          userMessages: sc.userMessages,
+          models: [onboardingModel],
+          parameters,
+          samplesPerModel,
+          scenarioId: sc.id,
+          provider: activeProvider,
+        });
+      }
     } finally {
       setIsLaunching(false);
     }
