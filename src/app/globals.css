@@ -172,7 +172,7 @@ p {
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgb(20 25 35 / 60%);
+  background: var(--surface);
   width: fit-content;
 }
 
@@ -199,11 +199,8 @@ p {
 
 .panel {
   border: 1px solid var(--line);
-  background: rgb(20 25 35 / 88%);
+  background: var(--surface);
   box-shadow: var(--shadow);
-}
-
-.panel {
   border-radius: 18px;
 }
 
@@ -418,7 +415,7 @@ p {
   gap: 0;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgb(20 25 35 / 88%);
+  background: var(--surface);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -431,7 +428,7 @@ p {
 .analysis-table {
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgb(20 25 35 / 88%);
+  background: var(--surface);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -552,7 +549,7 @@ p {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgb(20 25 35 / 88%);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
@@ -930,7 +927,7 @@ p {
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgb(20 25 35 / 72%);
+  background: var(--surface);
 }
 
 .detail-section-heading {
@@ -1210,7 +1207,7 @@ p {
   padding: 20px;
   border: 1px solid var(--line);
   border-radius: 15px;
-  background: rgb(20 25 35 / 88%);
+  background: var(--surface);
 }
 
 .history-total {
