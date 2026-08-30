@@ -5440,6 +5440,9 @@ select:focus,
 .anomalies-panel {
   margin-top: 24px;
   padding: 26px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
 }
 
 .anomalies-panel .controls-header {
