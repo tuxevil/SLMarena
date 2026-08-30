@@ -346,21 +346,6 @@ export function ArenaLeaderboard({
                           🧠 CoT: {m.reasoningEffort}
                         </span>
                       )}
-                      {m.reasoningEffort === "off" && (
-                        <span
-                          className="badge"
-                          style={{
-                            fontSize: "0.68rem",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            marginLeft: "4px",
-                            color: "var(--muted)",
-                            border: "1px solid var(--line)",
-                          }}
-                        >
-                          Direct
-                        </span>
-                      )}
                       {getEligibilityBadge(m)}
                     </td>
                     <td style={{ textAlign: "center" }}>
