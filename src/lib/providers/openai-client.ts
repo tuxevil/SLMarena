@@ -99,38 +99,9 @@ export async function streamOpenAICompatibleChat({
     headers["authorization"] = `Bearer ${apiKey.trim()}`;
   }
 
-  // Transform messages: If provider is FreeToken or llama.cpp, some models ignore/fail on top-level "system" role when reasoning is off.
-  // Merging system instructions into the first user message ensures 100% compliance across all local backends.
-  const formattedMessages: ChatMessage[] = [];
-  let pendingSystem = "";
-
-  for (const msg of messages) {
-    if (msg.role === "system") {
-      if (msg.content.trim()) {
-        pendingSystem = pendingSystem ? `${pendingSystem}\n\n${msg.content.trim()}` : msg.content.trim();
-      }
-    } else if (msg.role === "user") {
-      if (pendingSystem) {
-        formattedMessages.push({
-          role: "user",
-          content: `${pendingSystem}\n\n${msg.content}`,
-        });
-        pendingSystem = "";
-      } else {
-        formattedMessages.push(msg);
-      }
-    } else {
-      formattedMessages.push(msg);
-    }
-  }
-
-  if (pendingSystem) {
-    formattedMessages.push({ role: "user", content: pendingSystem });
-  }
-
   const body: Record<string, unknown> = {
     model,
-    messages: formattedMessages,
+    messages,
     stream: true,
     stream_options: { include_usage: true },
     temperature: parameters.temperature,

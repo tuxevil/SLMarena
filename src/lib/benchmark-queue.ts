@@ -195,6 +195,7 @@ async function executeModel(runId: string, resultId: string) {
         userMessage,
         responseText: response.responseText,
         thinking: response.thinking || null,
+        reasoningFallback: Boolean(response.reasoningFallback),
         ttftMs: response.ttftMs,
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
@@ -205,18 +206,23 @@ async function executeModel(runId: string, resultId: string) {
 
     const inferredResult = benchmarkStore.getStoredRun(runId)?.results.find((item) => item.id === resultId);
     const responseText = inferredResult?.responseText ?? "";
+    const hasReasoningFallback = inferredResult?.turns.some((t) => t.reasoningFallback) ?? false;
     if (responseText.trim().length < MIN_RESPONSE_CHARS) {
       console.warn(`[slmarena] [Inference Failed] ${runId}/${resultId}: response below ${MIN_RESPONSE_CHARS} chars (${responseText.trim().length}).`);
       benchmarkStore.updateResult(runId, resultId, {
         status: "FAILED",
         evalStatus: "FAILED",
         errorMessage: "EMPTY_RESPONSE",
+        reasoningFallback: hasReasoningFallback,
       });
       return;
     }
 
     const totals = aggregateTelemetry(turnTelemetry);
-    benchmarkStore.updateResult(runId, resultId, totals);
+    benchmarkStore.updateResult(runId, resultId, {
+      ...totals,
+      reasoningFallback: hasReasoningFallback,
+    });
 
     await benchmarkStore.flush(runId);
     await benchmarkStore.refreshRun(runId);

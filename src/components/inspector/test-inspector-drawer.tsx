@@ -149,7 +149,14 @@ export function TestInspectorDrawer({ run, result, onClose }: TestInspectorDrawe
               </div>
 
               <div className="drawer-box highlight">
-                <span className="box-label">SLM RESPONSE</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="box-label">SLM RESPONSE</span>
+                  {displayResult.reasoningFallback && (
+                    <span className="badge warn" style={{ fontSize: "0.7rem", color: "var(--warning)" }}>
+                      ⚠️ Response recovered from reasoning channel
+                    </span>
+                  )}
+                </div>
                 <pre className="code-block slm-output">{slmResponse}</pre>
               </div>
             </div>

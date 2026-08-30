@@ -26,6 +26,7 @@ export type OllamaChatResult = Telemetry & {
   responseText: string;
   thinking: string;
   evalDurationMs: number | null;
+  reasoningFallback?: boolean;
 };
 
 const MAX_RETRY_NUM_PREDICT = 8_192;

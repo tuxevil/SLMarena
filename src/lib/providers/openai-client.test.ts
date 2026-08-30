@@ -156,4 +156,166 @@ describe("streamOpenAICompatibleChat", () => {
     expect(result.tokPerSec).toBe(60);
     expect(result.evalDurationMs).toBe(500);
   });
+
+  it("sends reasoning_effort: 'off' when reasoningEffort is 'off'", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url, init) => {
+        capturedBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { status: 200 }),
+        );
+      }),
+    );
+
+    await streamOpenAICompatibleChat({
+      endpoint: "http://localhost:8000/v1",
+      model: "qwen",
+      messages: [{ role: "user", content: "hi" }],
+      parameters: {
+        temperature: 0.2,
+        numCtx: 8192,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        numPredict: 512,
+        reasoningEffort: "off",
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody!.reasoning_effort).toBe("off");
+  });
+
+  it("omits reasoning_effort when reasoningEffort is 'default'", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url, init) => {
+        capturedBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { status: 200 }),
+        );
+      }),
+    );
+
+    await streamOpenAICompatibleChat({
+      endpoint: "http://localhost:8000/v1",
+      model: "qwen",
+      messages: [{ role: "user", content: "hi" }],
+      parameters: {
+        temperature: 0.2,
+        numCtx: 8192,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        numPredict: 512,
+        reasoningEffort: "default",
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody!.reasoning_effort).toBeUndefined();
+  });
+
+  it("sends reasoning_effort: 'high' when configured", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url, init) => {
+        capturedBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { status: 200 }),
+        );
+      }),
+    );
+
+    await streamOpenAICompatibleChat({
+      endpoint: "http://localhost:8000/v1",
+      model: "qwen",
+      messages: [{ role: "user", content: "hi" }],
+      parameters: {
+        temperature: 0.2,
+        numCtx: 8192,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        numPredict: 512,
+        reasoningEffort: "high",
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody!.reasoning_effort).toBe("high");
+  });
+
+  it("preserves separate system and user message roles", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url, init) => {
+        capturedBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { status: 200 }),
+        );
+      }),
+    );
+
+    await streamOpenAICompatibleChat({
+      endpoint: "http://localhost:8000/v1",
+      model: "qwen",
+      messages: [
+        { role: "system", content: "System instructions" },
+        { role: "user", content: "User prompt" },
+      ],
+      parameters: {
+        temperature: 0.2,
+        numCtx: 8192,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        numPredict: 512,
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody!.messages).toEqual([
+      { role: "system", content: "System instructions" },
+      { role: "user", content: "User prompt" },
+    ]);
+  });
+
+  it("sets reasoningFallback=true when content is empty but thinking was received", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          [
+            'data: {"choices":[{"delta":{"reasoning_content":"Just thinking here without final content"}}]}',
+            "data: [DONE]",
+          ].join("\n\n"),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const result = await streamOpenAICompatibleChat({
+      endpoint: "http://localhost:8000/v1",
+      model: "qwen",
+      messages: [{ role: "user", content: "hi" }],
+      parameters: {
+        temperature: 0.2,
+        numCtx: 8192,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        numPredict: 512,
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(result.responseText).toBe("Just thinking here without final content");
+    expect(result.thinking).toBe("Just thinking here without final content");
+    expect(result.reasoningFallback).toBe(true);
+  });
 });

@@ -29,7 +29,7 @@ export const securityAttackTypeSchema = z.enum([
 export type TestCategory = z.infer<typeof testCategorySchema>;
 export type SecurityAttackType = z.infer<typeof securityAttackTypeSchema>;
 
-export const reasoningEffortSchema = z.enum(["off", "on", "default"]);
+export const reasoningEffortSchema = z.enum(["off", "default", "low", "medium", "high", "max"]);
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
 
 export const benchmarkParametersSchema = z.object({
@@ -189,6 +189,7 @@ export type TurnResult = Telemetry & {
   userMessage: string;
   responseText: string;
   thinking: string | null;
+  reasoningFallback?: boolean;
 };
 
 export type Evaluation = {
@@ -226,6 +227,7 @@ export type ModelResult = Telemetry & {
   humanStatus: HumanStatus;
   humanNotes: string;
   errorMessage: string | null;
+  reasoningFallback?: boolean;
 };
 
 export type TestRun = {

@@ -15,7 +15,7 @@ export type ParameterState = {
   topP: string;
   repeatPenalty: string;
   numPredict: string;
-  reasoningEffort?: "off" | "on" | "default";
+  reasoningEffort?: "off" | "default" | "low" | "medium" | "high" | "max";
 };
 
 interface RunWizardProps {
@@ -649,13 +649,16 @@ export function RunWizard({
                   onChange={(e) =>
                     setParameters({
                       ...parameters,
-                      reasoningEffort: e.target.value as "off" | "on" | "default",
+                      reasoningEffort: e.target.value as "off" | "default" | "low" | "medium" | "high" | "max",
                     })
                   }
                 >
                   <option value="off">Off (Standard benchmark - recommended)</option>
-                  <option value="on">On (Enforce reasoning effort)</option>
                   <option value="default">Provider Default</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="max">Max</option>
                 </select>
               </div>
             </div>
