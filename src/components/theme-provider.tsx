@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useSyncExternalStore, useState } from "react";
 
 export type Theme = "light" | "dark" | "system";
 
@@ -12,60 +12,52 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+function subscribe(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
+
+function getThemeSnapshot(): Theme {
+  return (localStorage.getItem("slmarena-theme") as Theme) || "system";
+}
+
+function getServerThemeSnapshot(): Theme {
+  return "system";
+}
+
+function subscribeSystemTheme(callback: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mediaQuery.addEventListener) {
+    mediaQuery.addEventListener("change", callback);
+    return () => mediaQuery.removeEventListener("change", callback);
+  } else {
+    mediaQuery.addListener(callback);
+    return () => mediaQuery.removeListener(callback);
+  }
+}
+
+function getSystemThemeSnapshot(): "light" | "dark" {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function getServerSystemThemeSnapshot(): "light" | "dark" {
+  return "dark";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");
-  const [mounted, setMounted] = useState(false);
+  const [internalTheme, setInternalTheme] = useState<Theme | null>(null);
+  const storedTheme = useSyncExternalStore(subscribe, getThemeSnapshot, getServerThemeSnapshot);
+  const systemTheme = useSyncExternalStore(subscribeSystemTheme, getSystemThemeSnapshot, getServerSystemThemeSnapshot);
+
+  const theme = internalTheme ?? storedTheme;
+  const resolvedTheme = theme === "system" ? systemTheme : theme;
 
   useEffect(() => {
-    setMounted(true);
-    const saved = localStorage.getItem("slmarena-theme") as Theme | null;
-    if (saved && (saved === "light" || saved === "dark" || saved === "system")) {
-      setThemeState(saved);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-    const root = document.documentElement;
-
-    const computeTheme = (t: Theme): "light" | "dark" => {
-      if (t === "system") {
-        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      }
-      return t;
-    };
-
-    const active = computeTheme(theme);
-    root.setAttribute("data-theme", active);
-    setResolvedTheme(active);
-
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => {
-      if (theme === "system") {
-        const nextActive = computeTheme("system");
-        root.setAttribute("data-theme", nextActive);
-        setResolvedTheme(nextActive);
-      }
-    };
-
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener("change", handleChange);
-    } else {
-      mediaQuery.addListener(handleChange);
-    }
-
-    return () => {
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener("change", handleChange);
-      } else {
-        mediaQuery.removeListener(handleChange);
-      }
-    };
-  }, [theme, mounted]);
+    document.documentElement.setAttribute("data-theme", resolvedTheme);
+  }, [resolvedTheme]);
 
   const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
+    setInternalTheme(newTheme);
     localStorage.setItem("slmarena-theme", newTheme);
   };
 

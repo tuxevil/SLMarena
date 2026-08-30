@@ -10,7 +10,7 @@ const nextConfig = [...nextCoreWebVitals, ...nextTypescript];
 const config = [
   ...nextConfig,
   {
-    ignores: ["landing/**"],
+    ignores: ["landing/**", "diag_*.ts", "enqueue_*.ts", "run_*.ts"],
   },
 ];
 

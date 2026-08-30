@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ModelProvider, Scenario, SecurityAttackType, TestCategory } from "@/lib/contracts";
 import { SECURITY_TEMPLATES } from "@/lib/security-templates";
 
@@ -85,15 +85,24 @@ export function RunWizard({
   ]);
 
   // Step 2: Models
-  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [selectedModels, setSelectedModels] = useState<string[]>(() => {
+    if ((activeProvider === "freetoken" || activeProvider === "llamacpp") && models.length > 0) {
+      return [models[0].name];
+    }
+    return [];
+  });
   const [samplesPerModel, setSamplesPerModel] = useState<string>("2");
+  const [lastAutoSelectedProvider, setLastAutoSelectedProvider] = useState<ModelProvider | undefined>(activeProvider);
 
   // Auto-select loaded model when switching to freetoken / llamacpp
-  useEffect(() => {
-    if ((activeProvider === "freetoken" || activeProvider === "llamacpp") && models.length > 0) {
-      setSelectedModels([models[0].name]);
-    }
-  }, [activeProvider, models]);
+  if (
+    (activeProvider === "freetoken" || activeProvider === "llamacpp") &&
+    activeProvider !== lastAutoSelectedProvider &&
+    models.length > 0
+  ) {
+    setLastAutoSelectedProvider(activeProvider);
+    setSelectedModels([models[0].name]);
+  }
   const [showAdvancedParams, setShowAdvancedParams] = useState(false);
   const [parameters, setParameters] = useState<ParameterState>({
     temperature: "0.2",

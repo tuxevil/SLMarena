@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ParameterState } from "@/components/wizard/run-wizard";
 import { useTheme } from "@/components/theme-provider";
 import type { EvaluatorEntry, ModelProvider } from "@/lib/contracts";
@@ -31,15 +31,15 @@ interface SettingsPanelProps {
   onActiveProviderChange?: (provider: ModelProvider) => void;
   evaluators: EvaluatorEntry[];
   activeEvaluatorId: string | null;
-  onSetActiveEvaluator: (id: string | null) => Promise<void>;
-  onAddEvaluator: (input: { label: string; baseUrl: string; model: string; apiKey: string; makeActive: boolean }) => Promise<void>;
-  onUpdateEvaluator: (id: string, input: { label?: string; baseUrl?: string; model?: string; apiKey?: string }) => Promise<void>;
+  onSetActiveEvaluator: (id: string | null) => void;
+  onAddEvaluator: (evaluator: { label: string; baseUrl: string; model: string; apiKey: string; makeActive: boolean }) => Promise<void>;
+  onUpdateEvaluator: (id: string, evaluator: { label?: string; baseUrl?: string; model?: string; apiKey?: string; makeActive?: boolean }) => Promise<void>;
   onDeleteEvaluator: (id: string) => Promise<void>;
   parameters: ParameterState;
-  onParametersChange: (params: ParameterState) => void;
+  onParametersChange: (parameters: ParameterState) => void;
   onSaveSettings: () => Promise<void>;
   isSaving: boolean;
-  notice?: string;
+  notice?: string | null;
 }
 
 const emptyForm: EvaluatorFormState = { label: "", baseUrl: "", model: "", apiKey: "" };
@@ -74,14 +74,7 @@ export function SettingsPanel({
   notice,
 }: SettingsPanelProps) {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const displayTheme = mounted ? theme : "system";
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EvaluatorFormState>(emptyForm);
   const [addForm, setAddForm] = useState<EvaluatorFormState>(emptyForm);
@@ -479,10 +472,10 @@ export function SettingsPanel({
 
       <div className="settings-section">
         <h4>4. Appearance &amp; Application Theme</h4>
-        <div className="theme-options-grid">
+        <div className="theme-options-grid" suppressHydrationWarning>
           <button
             type="button"
-            className={`theme-option-card ${displayTheme === "light" ? "selected" : ""}`}
+            className={`theme-option-card ${theme === "light" ? "selected" : ""}`}
             onClick={() => setTheme("light")}
           >
             <span className="icon">☀️</span>
@@ -492,7 +485,7 @@ export function SettingsPanel({
 
           <button
             type="button"
-            className={`theme-option-card ${displayTheme === "dark" ? "selected" : ""}`}
+            className={`theme-option-card ${theme === "dark" ? "selected" : ""}`}
             onClick={() => setTheme("dark")}
           >
             <span className="icon">🌙</span>
@@ -502,7 +495,7 @@ export function SettingsPanel({
 
           <button
             type="button"
-            className={`theme-option-card ${displayTheme === "system" ? "selected" : ""}`}
+            className={`theme-option-card ${theme === "system" ? "selected" : ""}`}
             onClick={() => setTheme("system")}
           >
             <span className="icon">💻</span>
