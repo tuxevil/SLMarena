@@ -76,7 +76,7 @@ export async function streamOpenAICompatibleChat({
   apiKey,
   signal,
   onToken,
-  provider = "freetoken",
+  provider,
   providerName = "Local Provider",
 }: {
   endpoint: string;
@@ -86,7 +86,7 @@ export async function streamOpenAICompatibleChat({
   apiKey?: string | null;
   signal: AbortSignal;
   onToken?: (token: string) => void;
-  provider?: "freetoken" | "llamacpp" | string;
+  provider: "freetoken" | "llamacpp";
   providerName?: string;
 }): Promise<OpenAIChatResult> {
   const startedAt = performance.now();

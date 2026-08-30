@@ -33,6 +33,7 @@ describe("streamOpenAICompatibleChat", () => {
     const result = await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8000/v1",
       model: "gpt-model",
+      provider: "freetoken",
       messages: [{ role: "user", content: "Hello" }],
       parameters: {
         temperature: 0.2,
@@ -71,6 +72,7 @@ describe("streamOpenAICompatibleChat", () => {
     const result = await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8080",
       model: "deepseek-r1",
+      provider: "llamacpp",
       messages: [{ role: "user", content: "Solve math" }],
       parameters: {
         temperature: 0.2,
@@ -104,6 +106,7 @@ describe("streamOpenAICompatibleChat", () => {
     const result = await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8000/v1",
       model: "qwen-qwq",
+      provider: "freetoken",
       messages: [{ role: "user", content: "Query" }],
       parameters: {
         temperature: 0.2,
@@ -138,6 +141,7 @@ describe("streamOpenAICompatibleChat", () => {
     const result = await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8080",
       model: "llama-3.2",
+      provider: "llamacpp",
       messages: [{ role: "user", content: "Hello" }],
       parameters: {
         temperature: 0.2,
@@ -236,6 +240,7 @@ describe("streamOpenAICompatibleChat", () => {
     await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8000/v1",
       model: "qwen",
+      provider: "freetoken",
       messages: [{ role: "user", content: "hi" }],
       parameters: {
         temperature: 0.2,
@@ -267,6 +272,7 @@ describe("streamOpenAICompatibleChat", () => {
     await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8000/v1",
       model: "qwen",
+      provider: "freetoken",
       messages: [{ role: "user", content: "hi" }],
       parameters: {
         temperature: 0.2,
@@ -298,6 +304,7 @@ describe("streamOpenAICompatibleChat", () => {
     await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8000/v1",
       model: "qwen",
+      provider: "freetoken",
       messages: [
         { role: "system", content: "System instructions" },
         { role: "user", content: "User prompt" },
@@ -336,6 +343,7 @@ describe("streamOpenAICompatibleChat", () => {
     const result = await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8000/v1",
       model: "qwen",
+      provider: "freetoken",
       messages: [{ role: "user", content: "hi" }],
       parameters: {
         temperature: 0.2,
