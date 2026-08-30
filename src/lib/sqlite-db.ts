@@ -285,10 +285,30 @@ function initSqliteTables(db: Database.Database) {
   if (!evalColumns.some((column) => column.name === "vulnerability_analysis")) {
     migrationDb.exec("ALTER TABLE evaluations ADD COLUMN vulnerability_analysis TEXT");
   }
+  if (!evalColumns.some((column) => column.name === "visible_prompt_leak")) {
+    migrationDb.exec("ALTER TABLE evaluations ADD COLUMN visible_prompt_leak INTEGER");
+  }
+  if (!evalColumns.some((column) => column.name === "reasoning_prompt_leak")) {
+    migrationDb.exec("ALTER TABLE evaluations ADD COLUMN reasoning_prompt_leak INTEGER");
+  }
+
+  const turnCols = migrationDb.prepare("PRAGMA table_info(model_result_turns)").all() as SqlRow[];
+  if (!turnCols.some((column) => column.name === "finish_reason")) {
+    migrationDb.exec("ALTER TABLE model_result_turns ADD COLUMN finish_reason TEXT");
+  }
+  if (!turnCols.some((column) => column.name === "truncated")) {
+    migrationDb.exec("ALTER TABLE model_result_turns ADD COLUMN truncated INTEGER");
+  }
 
   const resultColumns = migrationDb.prepare("PRAGMA table_info(model_results)").all() as SqlRow[];
   if (!resultColumns.some((column) => column.name === "sample_index")) {
     migrationDb.exec("ALTER TABLE model_results ADD COLUMN sample_index INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!resultColumns.some((column) => column.name === "finish_reason")) {
+    migrationDb.exec("ALTER TABLE model_results ADD COLUMN finish_reason TEXT");
+  }
+  if (!resultColumns.some((column) => column.name === "truncated")) {
+    migrationDb.exec("ALTER TABLE model_results ADD COLUMN truncated INTEGER");
   }
 
   const settingsColumns = migrationDb.prepare("PRAGMA table_info(app_settings)").all() as SqlRow[];
@@ -900,6 +920,8 @@ export function sqliteLoadState(targetRunId?: string) {
       userMessage: String(row.user_message),
       responseText: String(row.response_text),
       thinking: row.thinking ? String(row.thinking) : null,
+      finishReason: row.finish_reason ? String(row.finish_reason) : null,
+      truncated: row.truncated !== null && row.truncated !== undefined ? Boolean(row.truncated) : false,
       inputTokens: row.input_tokens !== null ? Number(row.input_tokens) : null,
       outputTokens: row.output_tokens !== null ? Number(row.output_tokens) : null,
       ttftMs: row.ttft_ms !== null ? Number(row.ttft_ms) : null,
@@ -924,6 +946,8 @@ export function sqliteLoadState(targetRunId?: string) {
       securityScore: row.security_score !== null && row.security_score !== undefined ? Number(row.security_score) : null,
       injectionSuccessful: row.injection_successful !== null && row.injection_successful !== undefined ? Boolean(row.injection_successful) : null,
       systemLeakageDetected: row.system_leakage_detected !== null && row.system_leakage_detected !== undefined ? Boolean(row.system_leakage_detected) : null,
+      visiblePromptLeak: row.visible_prompt_leak !== null && row.visible_prompt_leak !== undefined ? Boolean(row.visible_prompt_leak) : null,
+      reasoningPromptLeak: row.reasoning_prompt_leak !== null && row.reasoning_prompt_leak !== undefined ? Boolean(row.reasoning_prompt_leak) : null,
       vulnerabilityAnalysis: row.vulnerability_analysis ? String(row.vulnerability_analysis) : null,
       rawJson: safeJsonParse(row.evaluator_raw_json),
     });
@@ -934,19 +958,21 @@ export function sqliteLoadState(targetRunId?: string) {
     const rowId = String(row.id);
     const turns = turnsByResult.get(rowId) || [];
     const evaluation = evalsByResult.get(rowId) || null;
-    const result: ModelResult = {
-      id: rowId,
-      modelName: String(row.model_name),
-      sampleIndex: Number(row.sample_index ?? 0),
-      status: row.status as ModelResult["status"],
-      evalStatus: row.eval_status as ModelResult["evalStatus"],
-      responseText: String(row.response_text || ""),
-      inputTokens: row.input_tokens !== null ? Number(row.input_tokens) : null,
-      outputTokens: row.output_tokens !== null ? Number(row.output_tokens) : null,
-      ttftMs: row.ttft_ms !== null ? Number(row.ttft_ms) : null,
-      tokPerSec: row.tok_per_sec !== null ? Number(row.tok_per_sec) : null,
-      totalDurationMs: row.total_duration_ms !== null ? Number(row.total_duration_ms) : null,
-      turns,
+      const result: ModelResult = {
+        id: rowId,
+        modelName: String(row.model_name),
+        sampleIndex: Number(row.sample_index ?? 0),
+        status: row.status as ModelResult["status"],
+        evalStatus: row.eval_status as ModelResult["evalStatus"],
+        responseText: String(row.response_text || ""),
+        finishReason: row.finish_reason ? String(row.finish_reason) : null,
+        truncated: row.truncated !== null && row.truncated !== undefined ? Boolean(row.truncated) : false,
+        inputTokens: row.input_tokens !== null ? Number(row.input_tokens) : null,
+        outputTokens: row.output_tokens !== null ? Number(row.output_tokens) : null,
+        ttftMs: row.ttft_ms !== null ? Number(row.ttft_ms) : null,
+        tokPerSec: row.tok_per_sec !== null ? Number(row.tok_per_sec) : null,
+        totalDurationMs: row.total_duration_ms !== null ? Number(row.total_duration_ms) : null,
+        turns,
       evaluation,
       errorMessage: row.error_message ? String(row.error_message) : null,
       humanStatus: row.human_status as HumanStatus,

@@ -1524,6 +1524,12 @@ function getClient() {
       ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_provider VARCHAR(32) DEFAULT 'ollama';
       ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS provider VARCHAR(32) DEFAULT 'ollama';
       ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS provider_url TEXT;
+      ALTER TABLE model_result_turns ADD COLUMN IF NOT EXISTS finish_reason TEXT;
+      ALTER TABLE model_result_turns ADD COLUMN IF NOT EXISTS truncated BOOLEAN;
+      ALTER TABLE model_results ADD COLUMN IF NOT EXISTS finish_reason TEXT;
+      ALTER TABLE model_results ADD COLUMN IF NOT EXISTS truncated BOOLEAN;
+      ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS visible_prompt_leak BOOLEAN;
+      ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS reasoning_prompt_leak BOOLEAN;
     `.catch(() => undefined);
   }
   return client;

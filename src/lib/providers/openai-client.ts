@@ -59,7 +59,8 @@ export function normalizeChatEndpoint(endpoint: string): string {
 export type OpenAIChatResult = {
   responseText: string;
   thinking: string;
-  reasoningFallback?: boolean;
+  finishReason: string | null;
+  truncated: boolean;
   ttftMs: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -173,6 +174,7 @@ export async function streamOpenAICompatibleChat({
   let firstTokenAt: number | null = null;
   let usage: OpenAIUsage | null = null;
   let timings: LlamaCppTimings | null = null;
+  let finishReason: string | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -205,7 +207,12 @@ export async function streamOpenAICompatibleChat({
         timings = chunk.timings;
       }
 
-      const delta = chunk.choices?.[0]?.delta;
+      const choice = chunk.choices?.[0];
+      if (choice?.finish_reason) {
+        finishReason = choice.finish_reason;
+      }
+
+      const delta = choice?.delta;
       if (!delta) continue;
 
       const reasoningToken = delta.reasoning_content ?? delta.reasoning ?? delta.thinking ?? "";
@@ -232,6 +239,9 @@ export async function streamOpenAICompatibleChat({
       const chunk = JSON.parse(finalTrimmed.replace(/^data:\s*/, "")) as OpenAIChunk;
       if (chunk.usage) usage = chunk.usage;
       if (chunk.timings) timings = chunk.timings;
+      if (chunk.choices?.[0]?.finish_reason) {
+        finishReason = chunk.choices[0].finish_reason;
+      }
     } catch {
       // Ignore
     }
@@ -247,14 +257,6 @@ export async function streamOpenAICompatibleChat({
     }
   }
 
-  // Handle reasoning fallback if content was empty
-  let reasoningFallback = false;
-  if (!responseText.trim() && thinking.trim()) {
-    responseText = thinking.trim();
-    reasoningFallback = true;
-    console.warn(`[slmarena] [${providerName}] Response content was empty; recovered from reasoning/thinking channel (reasoning_fallback).`);
-  }
-
   const finishedAt = performance.now();
   const totalDurationMs = Math.round(finishedAt - startedAt);
   const evalDurationMs =
@@ -267,6 +269,8 @@ export async function streamOpenAICompatibleChat({
   const inputTokens = usage?.prompt_tokens ?? timings?.prompt_n ?? null;
   const outputTokens = usage?.completion_tokens ?? timings?.predicted_n ?? null;
 
+  const truncated = finishReason === "length" || (outputTokens !== null && outputTokens >= parameters.numPredict);
+
   let tokPerSec: number | null = null;
   if (timings?.predicted_per_second != null && timings.predicted_per_second > 0) {
     tokPerSec = Number(timings.predicted_per_second.toFixed(2));
@@ -277,7 +281,8 @@ export async function streamOpenAICompatibleChat({
   return {
     responseText,
     thinking,
-    reasoningFallback,
+    finishReason,
+    truncated,
     ttftMs: firstTokenAt === null ? null : Math.round(firstTokenAt - startedAt),
     inputTokens,
     outputTokens,

@@ -664,6 +664,12 @@ export function RunWizard({
             </div>
           )}
 
+          {parameters.reasoningEffort && parameters.reasoningEffort !== "off" && Number(parameters.numPredict) < 1024 && (
+            <div className="notice-banner warn" style={{ marginTop: "16px", padding: "10px 14px", fontSize: "0.85rem", background: "rgb(255 200 87 / 15%)", border: "1px solid var(--warning)", borderRadius: "8px", color: "var(--warning)" }}>
+              ⚠️ <strong>Warning:</strong> Reasoning mode is enabled with only <code>{parameters.numPredict}</code> max output tokens. The model may exhaust its generation budget thinking before producing a final answer.
+            </div>
+          )}
+
           <div className="wizard-actions launch">
             <button type="button" className="btn-secondary" onClick={() => setStep(2)}>
               ⬅️ Back

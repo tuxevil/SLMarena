@@ -750,6 +750,11 @@ export function TestSuitesMatrix({
                 </select>
               </div>
             </div>
+            {parameters.reasoningEffort && parameters.reasoningEffort !== "off" && (parameters.numPredict ?? 512) < 1024 && (
+              <p style={{ marginTop: "12px", marginBottom: 0, fontSize: "0.78rem", color: "var(--warning)" }}>
+                ⚠️ <strong>Warning:</strong> Reasoning enabled with only {parameters.numPredict ?? 512} output tokens. The model may exhaust its generation budget thinking before producing a visible final answer.
+              </p>
+            )}
           </div>
         </div>
       </div>

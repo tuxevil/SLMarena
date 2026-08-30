@@ -26,7 +26,8 @@ export type OllamaChatResult = Telemetry & {
   responseText: string;
   thinking: string;
   evalDurationMs: number | null;
-  reasoningFallback?: boolean;
+  finishReason: string | null;
+  truncated: boolean;
 };
 
 const MAX_RETRY_NUM_PREDICT = 8_192;
@@ -64,10 +65,14 @@ export async function streamOllamaChat({
   const evalDurationMs = durationMs(streamed.finalChunk.eval_duration);
   const outputTokens = streamed.finalChunk.eval_count ?? null;
   const totalDurationMs = durationMs(streamed.finalChunk.total_duration);
+  const finishReason = streamed.finalChunk.done_reason ?? (streamed.finalChunk.done ? "stop" : null);
+  const truncated = finishReason === "length" || (outputTokens !== null && outputTokens >= parameters.numPredict);
 
   return {
     responseText: streamed.responseText,
     thinking: streamed.thinking,
+    finishReason,
+    truncated,
     ttftMs: streamed.firstTokenAt === null ? null : Math.round(streamed.firstTokenAt - startedAt),
     inputTokens: streamed.finalChunk.prompt_eval_count ?? null,
     outputTokens,

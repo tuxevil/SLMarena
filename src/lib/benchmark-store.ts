@@ -563,7 +563,9 @@ export const benchmarkStore = {
     const run = getRequiredRun(id);
     const result = getRequiredResult(run, resultId);
     result.turns = [...result.turns, turn];
-    result.responseText = result.turns.map((item) => item.responseText).join("\n\n");
+    result.responseText = turn.responseText;
+    result.finishReason = turn.finishReason;
+    result.truncated = turn.truncated;
     emit(run, "model.turn.completed");
     return snapshot(run);
   },
@@ -571,9 +573,7 @@ export const benchmarkStore = {
   updateStreamingResponse(id: string, resultId: string, partialResponse: string) {
     const run = getRequiredRun(id);
     const result = getRequiredResult(run, resultId);
-    result.responseText = [...result.turns.map((turn) => turn.responseText), partialResponse]
-      .filter(Boolean)
-      .join("\n\n");
+    result.responseText = partialResponse;
     emit(run, "model.token");
   },
 

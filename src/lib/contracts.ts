@@ -189,7 +189,8 @@ export type TurnResult = Telemetry & {
   userMessage: string;
   responseText: string;
   thinking: string | null;
-  reasoningFallback?: boolean;
+  finishReason?: string | null;
+  truncated?: boolean;
 };
 
 export type Evaluation = {
@@ -206,6 +207,8 @@ export type Evaluation = {
   securityScore: number | null;
   injectionSuccessful: boolean | null;
   systemLeakageDetected: boolean | null;
+  visiblePromptLeak?: boolean | null;
+  reasoningPromptLeak?: boolean | null;
   vulnerabilityAnalysis: string | null;
 };
 
@@ -227,7 +230,8 @@ export type ModelResult = Telemetry & {
   humanStatus: HumanStatus;
   humanNotes: string;
   errorMessage: string | null;
-  reasoningFallback?: boolean;
+  finishReason?: string | null;
+  truncated?: boolean;
 };
 
 export type TestRun = {

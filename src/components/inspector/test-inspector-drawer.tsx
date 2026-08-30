@@ -92,7 +92,8 @@ export function TestInspectorDrawer({ run, result, onClose }: TestInspectorDrawe
 
   const securityStatus = () => {
     if (displayResult.evaluation?.injectionSuccessful) return <span className="badge danger">🔴 LEAK / INJECTION SUCCESS</span>;
-    if (displayResult.evaluation?.systemLeakageDetected) return <span className="badge danger">🔴 SYSTEM LEAK</span>;
+    if (displayResult.evaluation?.systemLeakageDetected || displayResult.evaluation?.visiblePromptLeak) return <span className="badge danger">🔴 SYSTEM LEAK</span>;
+    if (displayResult.evaluation?.reasoningPromptLeak) return <span className="badge warn">⚠️ REASONING LEAK ONLY</span>;
     if (run?.category === "SECURITY") return <span className="badge safe">🟢 IMMUNE</span>;
     return <span className="badge safe">🟢 PASS</span>;
   };
@@ -143,17 +144,47 @@ export function TestInspectorDrawer({ run, result, onClose }: TestInspectorDrawe
                 <pre className="code-block">{systemPrompt}</pre>
               </div>
 
-              <div className="drawer-box">
-                <span className="box-label">USER PROMPT</span>
-                <pre className="code-block">{userPrompt}</pre>
-              </div>
+              {displayResult.turns && displayResult.turns.length > 1 ? (
+                <div className="drawer-box">
+                  <span className="box-label">CONVERSATION TRANSCRIPT</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "8px" }}>
+                    {displayResult.turns.map((t, i) => (
+                      <div key={t.id || i} style={{ padding: "8px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "6px" }}>
+                        <div style={{ fontWeight: 600, fontSize: "0.75rem", color: "var(--muted)", marginBottom: "4px" }}>
+                          Turn {t.stepOrder} — User
+                        </div>
+                        <div style={{ fontSize: "0.85rem", marginBottom: "6px" }}>{t.userMessage}</div>
+                        {t.thinking && (
+                          <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontStyle: "italic", marginBottom: "4px" }}>
+                            💭 Thinking: {t.thinking.slice(0, 150)}...
+                          </div>
+                        )}
+                        <div style={{ fontWeight: 600, fontSize: "0.75rem", color: "var(--accent)", marginBottom: "4px" }}>
+                          Turn {t.stepOrder} — Assistant
+                        </div>
+                        <div style={{ fontSize: "0.85rem" }}>{t.responseText || "(No answer)"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="drawer-box">
+                  <span className="box-label">USER PROMPT</span>
+                  <pre className="code-block">{userPrompt}</pre>
+                </div>
+              )}
 
               <div className="drawer-box highlight">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="box-label">SLM RESPONSE</span>
-                  {displayResult.reasoningFallback && (
+                  <span className="box-label">FINAL MODEL RESPONSE</span>
+                  {displayResult.evaluation?.reasoningPromptLeak && (
                     <span className="badge warn" style={{ fontSize: "0.7rem", color: "var(--warning)" }}>
-                      ⚠️ Response recovered from reasoning channel
+                      ⚠️ Reasoning channel exposed protected information
+                    </span>
+                  )}
+                  {displayResult.finishReason === "length" && (
+                    <span className="badge warn" style={{ fontSize: "0.7rem", color: "var(--warning)" }}>
+                      ⚠️ Truncated (max tokens reached)
                     </span>
                   )}
                 </div>

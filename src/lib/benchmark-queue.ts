@@ -121,12 +121,19 @@ async function executeModel(runId: string, resultId: string) {
     evalDurationMs: number | null;
   }>;
 
+  const conversation: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: run.systemPrompt },
+  ];
+
   try {
     for (const [index, userMessage] of run.userMessages.entries()) {
       if (run.cancelController.signal.aborted) return;
       if (!(await waitUntilRunnable(runId))) return;
       const activeRun = benchmarkStore.getStoredRun(runId);
       if (!activeRun) return;
+
+      conversation.push({ role: "user", content: userMessage });
+
       let partialResponse = "";
       let lastStreamUpdate = 0;
       const provider = activeRun.provider ?? "ollama";
@@ -144,10 +151,7 @@ async function executeModel(runId: string, resultId: string) {
             ? streamOllamaChat({
                 endpoint,
                 model: result.modelName,
-                messages: [
-                  { role: "system", content: activeRun.systemPrompt },
-                  { role: "user", content: userMessage },
-                ],
+                messages: conversation,
                 parameters: activeRun.parameters,
                 signal: activeRun.cancelController.signal,
                 onToken: (token) => {
@@ -162,10 +166,7 @@ async function executeModel(runId: string, resultId: string) {
             : streamOpenAICompatibleChat({
                 endpoint,
                 model: result.modelName,
-                messages: [
-                  { role: "system", content: activeRun.systemPrompt },
-                  { role: "user", content: userMessage },
-                ],
+                messages: conversation,
                 parameters: activeRun.parameters,
                 apiKey,
                 provider: provider === "llamacpp" ? "llamacpp" : "freetoken",
@@ -190,31 +191,58 @@ async function executeModel(runId: string, resultId: string) {
         totalDurationMs: response.totalDurationMs,
         evalDurationMs: response.evalDurationMs,
       });
+
+      const turnResponse = response.responseText.trim();
+      const turnThinking = response.thinking?.trim() || null;
+
       benchmarkStore.addTurn(runId, resultId, {
         id: crypto.randomUUID(),
         stepOrder: index + 1,
         userMessage,
         responseText: response.responseText,
-        thinking: response.thinking || null,
-        reasoningFallback: Boolean(response.reasoningFallback),
+        thinking: turnThinking,
+        finishReason: response.finishReason,
+        truncated: response.truncated,
         ttftMs: response.ttftMs,
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         tokPerSec: response.tokPerSec,
         totalDurationMs: response.totalDurationMs,
       });
+
+      // If this turn failed to produce visible content, fail the turn and stop conversation
+      if (turnResponse.length === 0) {
+        const errorReason = turnThinking ? "NO_FINAL_ANSWER" : "EMPTY_RESPONSE";
+        console.warn(`[slmarena] [Inference Failed] ${runId}/${resultId} turn ${index + 1}: ${errorReason}.`);
+        benchmarkStore.updateResult(runId, resultId, {
+          status: "FAILED",
+          evalStatus: "FAILED",
+          errorMessage: errorReason,
+          finishReason: response.finishReason,
+          truncated: response.truncated,
+        });
+        return;
+      }
+
+      // Add assistant response to conversation history (only visible responseText, never thinking)
+      conversation.push({
+        role: "assistant",
+        content: response.responseText,
+      });
     }
 
     const inferredResult = benchmarkStore.getStoredRun(runId)?.results.find((item) => item.id === resultId);
     const responseText = inferredResult?.responseText ?? "";
-    const hasReasoningFallback = inferredResult?.turns.some((t) => t.reasoningFallback) ?? false;
+    const lastTurn = inferredResult?.turns[inferredResult.turns.length - 1];
+
     if (responseText.trim().length < MIN_RESPONSE_CHARS) {
       console.warn(`[slmarena] [Inference Failed] ${runId}/${resultId}: response below ${MIN_RESPONSE_CHARS} chars (${responseText.trim().length}).`);
       benchmarkStore.updateResult(runId, resultId, {
         status: "FAILED",
         evalStatus: "FAILED",
         errorMessage: "EMPTY_RESPONSE",
-        reasoningFallback: hasReasoningFallback,
+        finishReason: lastTurn?.finishReason ?? null,
+        truncated: lastTurn?.truncated ?? false,
       });
       return;
     }
@@ -222,7 +250,8 @@ async function executeModel(runId: string, resultId: string) {
     const totals = aggregateTelemetry(turnTelemetry);
     benchmarkStore.updateResult(runId, resultId, {
       ...totals,
-      reasoningFallback: hasReasoningFallback,
+      finishReason: lastTurn?.finishReason ?? null,
+      truncated: lastTurn?.truncated ?? false,
     });
 
     await benchmarkStore.flush(runId);
@@ -240,6 +269,11 @@ async function executeModel(runId: string, resultId: string) {
             config: latestRun.evaluator!,
             systemPrompt: latestRun.systemPrompt,
             userMessages: latestRun.userMessages,
+            transcript: currentResult?.turns.flatMap((t) => [
+              { role: "user" as const, content: t.userMessage },
+              { role: "assistant" as const, content: t.responseText },
+            ]),
+            thinkingText: currentResult?.turns.map((t) => t.thinking).filter(Boolean).join("\n\n"),
             responseText: currentResult?.responseText ?? "",
             modelName: result.modelName,
             signal: latestRun.cancelController.signal,

@@ -326,13 +326,14 @@ describe("streamOpenAICompatibleChat", () => {
     ]);
   });
 
-  it("sets reasoningFallback=true when content is empty but thinking was received", async () => {
+  it("returns empty responseText when content is empty and preserves thinking without converting to response", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
           [
-            'data: {"choices":[{"delta":{"reasoning_content":"Just thinking here without final content"}}]}',
+            'data: {"choices":[{"delta":{"reasoning_content":"Just thinking here without final content"},"finish_reason":"length"}]}',
+            'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":512,"total_tokens":522}}',
             "data: [DONE]",
           ].join("\n\n"),
           { status: 200 },
@@ -355,8 +356,9 @@ describe("streamOpenAICompatibleChat", () => {
       signal: new AbortController().signal,
     });
 
-    expect(result.responseText).toBe("Just thinking here without final content");
+    expect(result.responseText).toBe("");
     expect(result.thinking).toBe("Just thinking here without final content");
-    expect(result.reasoningFallback).toBe(true);
+    expect(result.truncated).toBe(true);
+    expect(result.finishReason).toBe("length");
   });
 });

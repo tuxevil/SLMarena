@@ -40,24 +40,28 @@ describe("enqueueBenchmark", () => {
     expect(result.tokPerSec).toBe(8);
   });
 
-  it("sends each turn as an isolated request without conversation history", async () => {
-    const chatStream = () =>
+  it("maintains real multi-turn conversation history across turns", async () => {
+    const chatStream = (text: string) =>
       new Response(
         [
-          JSON.stringify({ message: { content: "A full isolated answer" } }),
+          JSON.stringify({ message: { content: text } }),
           JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 8, eval_duration: 1_000_000_000, total_duration: 1_200_000_000 }),
         ].join("\n"),
         { status: 200 },
       );
-    const fetchMock = vi.fn().mockResolvedValueOnce(chatStream()).mockResolvedValueOnce(chatStream());
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatStream("Answer 1 to Q1 (long enough to pass)"))
+      .mockResolvedValueOnce(chatStream("Answer 2 to Q2 (long enough to pass)"))
+      .mockResolvedValueOnce(chatStream("Answer 3 to Q3 (long enough to pass)"));
     vi.stubGlobal("fetch", fetchMock);
 
     const run = benchmarkStore.createRun({
       ollamaUrl: "http://localhost:11434",
       samplesPerModel: 1,
       systemPrompt: "Be concise.",
-      userMessages: ["First question.", "Second question."],
-      models: [`isolated-model-${crypto.randomUUID()}`],
+      userMessages: ["u1", "u2", "u3"],
+      models: [`multiturn-model-${crypto.randomUUID()}`],
       parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
     });
 
@@ -65,16 +69,38 @@ describe("enqueueBenchmark", () => {
     const completed = await waitForRun(run.id);
 
     expect(completed.status).toBe("COMPLETED");
-    expect(completed.results[0].turns).toHaveLength(2);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(completed.results[0].turns).toHaveLength(3);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    const firstMessages = JSON.parse(String(fetchMock.mock.calls[0][1].body)).messages;
-    expect(firstMessages.map((message: { role: string }) => message.role)).toEqual(["system", "user"]);
-    expect(firstMessages[1].content).toBe("First question.");
+    // Call 1: system, u1
+    const call1Messages = JSON.parse(String(fetchMock.mock.calls[0][1].body)).messages;
+    expect(call1Messages).toEqual([
+      { role: "system", content: "Be concise." },
+      { role: "user", content: "u1" },
+    ]);
 
-    const secondMessages = JSON.parse(String(fetchMock.mock.calls[1][1].body)).messages;
-    expect(secondMessages.map((message: { role: string }) => message.role)).toEqual(["system", "user"]);
-    expect(secondMessages[1].content).toBe("Second question.");
+    // Call 2: system, u1, a1, u2
+    const call2Messages = JSON.parse(String(fetchMock.mock.calls[1][1].body)).messages;
+    expect(call2Messages).toEqual([
+      { role: "system", content: "Be concise." },
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "Answer 1 to Q1 (long enough to pass)" },
+      { role: "user", content: "u2" },
+    ]);
+
+    // Call 3: system, u1, a1, u2, a2, u3
+    const call3Messages = JSON.parse(String(fetchMock.mock.calls[2][1].body)).messages;
+    expect(call3Messages).toEqual([
+      { role: "system", content: "Be concise." },
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "Answer 1 to Q1 (long enough to pass)" },
+      { role: "user", content: "u2" },
+      { role: "assistant", content: "Answer 2 to Q2 (long enough to pass)" },
+      { role: "user", content: "u3" },
+    ]);
+
+    // P0 verification: responseText is ONLY the final answer, not concatenated
+    expect(completed.results[0].responseText).toBe("Answer 3 to Q3 (long enough to pass)");
   });
 
   it("runs multiple samples per model without mixing their responses", async () => {
@@ -321,6 +347,91 @@ describe("enqueueBenchmark", () => {
     expect(result.inputTokens).toBe(8);
     expect(result.outputTokens).toBe(16);
     expect(result.tokPerSec).toBe(80);
+  });
+
+  it("maintains real multi-turn conversation history for FreeToken / OpenAI-compatible providers", async () => {
+    const chatChunk = (text: string) =>
+      new Response(
+        [
+          `data: {"choices":[{"delta":{"content":"${text}"}}]}`,
+          'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":10,"total_tokens":20}}',
+          "data: [DONE]",
+        ].join("\n\n"),
+        { status: 200 },
+      );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatChunk("FT Answer 1 (long enough to pass threshold)"))
+      .mockResolvedValueOnce(chatChunk("FT Answer 2 (long enough to pass threshold)"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const run = benchmarkStore.createRun({
+      provider: "freetoken",
+      providerUrl: "http://localhost:8000/v1",
+      samplesPerModel: 1,
+      systemPrompt: "System instruction.",
+      userMessages: ["Msg 1", "Msg 2"],
+      models: [`freetoken-multi-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    enqueueBenchmark(run.id);
+    const completed = await waitForRun(run.id);
+
+    expect(completed.status).toBe("COMPLETED");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const call1Messages = JSON.parse(String(fetchMock.mock.calls[0][1].body)).messages;
+    expect(call1Messages).toEqual([
+      { role: "system", content: "System instruction." },
+      { role: "user", content: "Msg 1" },
+    ]);
+
+    const call2Messages = JSON.parse(String(fetchMock.mock.calls[1][1].body)).messages;
+    expect(call2Messages).toEqual([
+      { role: "system", content: "System instruction." },
+      { role: "user", content: "Msg 1" },
+      { role: "assistant", content: "FT Answer 1 (long enough to pass threshold)" },
+      { role: "user", content: "Msg 2" },
+    ]);
+
+    expect(completed.results[0].responseText).toBe("FT Answer 2 (long enough to pass threshold)");
+  });
+
+  it("fails immediately with NO_FINAL_ANSWER when turn produces empty visible content", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          [
+            'data: {"choices":[{"delta":{"reasoning_content":"Just thinking here"}}]}',
+            "data: [DONE]",
+          ].join("\n\n"),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const run = benchmarkStore.createRun({
+      provider: "freetoken",
+      providerUrl: "http://localhost:8000/v1",
+      samplesPerModel: 1,
+      systemPrompt: "Be concise.",
+      userMessages: ["Turn 1", "Turn 2"],
+      models: [`reasoning-only-model-${crypto.randomUUID()}`],
+      parameters: { temperature: 0.2, numCtx: 8192, topP: 0.9, repeatPenalty: 1.1, numPredict: 64 },
+    });
+
+    enqueueBenchmark(run.id);
+    const completed = await waitForRun(run.id);
+    const result = completed.results[0];
+
+    expect(completed.status).toBe("FAILED");
+    expect(result.status).toBe("FAILED");
+    expect(result.errorMessage).toBe("NO_FINAL_ANSWER");
+    expect(result.turns).toHaveLength(1);
+    expect(result.turns[0].thinking).toBe("Just thinking here");
+    expect(result.turns[0].responseText).toBe("");
   });
 });
 
