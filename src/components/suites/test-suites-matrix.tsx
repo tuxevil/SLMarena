@@ -63,6 +63,7 @@ export function TestSuitesMatrix({
     topP: 0.9,
     repeatPenalty: 1.1,
     numPredict: 512,
+    reasoningEffort: "off",
   });
   const [samplesPerModel, setSamplesPerModel] = useState(2);
   const [isLaunching, setIsLaunching] = useState(false);

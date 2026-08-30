@@ -1,5 +1,4 @@
 import type { BenchmarkParameters } from "@/lib/contracts";
-import type { OllamaChatResult } from "@/lib/ollama-client";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -57,6 +56,18 @@ export function normalizeChatEndpoint(endpoint: string): string {
   return `${clean}/v1/chat/completions`;
 }
 
+export type OpenAIChatResult = {
+  responseText: string;
+  thinking: string;
+  reasoningFallback?: boolean;
+  ttftMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  tokPerSec: number | null;
+  totalDurationMs: number;
+  evalDurationMs: number;
+};
+
 export async function streamOpenAICompatibleChat({
   endpoint,
   model,
@@ -75,7 +86,7 @@ export async function streamOpenAICompatibleChat({
   signal: AbortSignal;
   onToken?: (token: string) => void;
   providerName?: string;
-}): Promise<OllamaChatResult> {
+}): Promise<OpenAIChatResult> {
   const startedAt = performance.now();
   const url = normalizeChatEndpoint(endpoint);
   const timeoutSignal = AbortSignal.timeout(120_000);
@@ -88,15 +99,49 @@ export async function streamOpenAICompatibleChat({
     headers["authorization"] = `Bearer ${apiKey.trim()}`;
   }
 
+  // Transform messages: If provider is FreeToken or llama.cpp, some models ignore/fail on top-level "system" role when reasoning is off.
+  // Merging system instructions into the first user message ensures 100% compliance across all local backends.
+  const formattedMessages: ChatMessage[] = [];
+  let pendingSystem = "";
+
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      if (msg.content.trim()) {
+        pendingSystem = pendingSystem ? `${pendingSystem}\n\n${msg.content.trim()}` : msg.content.trim();
+      }
+    } else if (msg.role === "user") {
+      if (pendingSystem) {
+        formattedMessages.push({
+          role: "user",
+          content: `${pendingSystem}\n\n${msg.content}`,
+        });
+        pendingSystem = "";
+      } else {
+        formattedMessages.push(msg);
+      }
+    } else {
+      formattedMessages.push(msg);
+    }
+  }
+
+  if (pendingSystem) {
+    formattedMessages.push({ role: "user", content: pendingSystem });
+  }
+
   const body: Record<string, unknown> = {
     model,
-    messages,
+    messages: formattedMessages,
     stream: true,
     stream_options: { include_usage: true },
     temperature: parameters.temperature,
     top_p: parameters.topP,
     max_tokens: parameters.numPredict,
   };
+
+  const reasoningEffort = parameters.reasoningEffort ?? "off";
+  if (reasoningEffort !== "default") {
+    body.reasoning_effort = reasoningEffort;
+  }
 
   if (parameters.repeatPenalty > 1) {
     body.presence_penalty = Math.min(2, parameters.repeatPenalty - 1);
@@ -225,9 +270,12 @@ export async function streamOpenAICompatibleChat({
     }
   }
 
-  // Fallback: If content is empty but model emitted reasoning_content (e.g. Qwen3.6/DeepSeek reasoning models without explicit answer tokens), use thinking as response
+  // Handle reasoning fallback if content was empty
+  let reasoningFallback = false;
   if (!responseText.trim() && thinking.trim()) {
     responseText = thinking.trim();
+    reasoningFallback = true;
+    console.warn(`[slmarena] [${providerName}] Response content was empty; recovered from reasoning/thinking channel (reasoning_fallback).`);
   }
 
   const finishedAt = performance.now();
@@ -252,6 +300,7 @@ export async function streamOpenAICompatibleChat({
   return {
     responseText,
     thinking,
+    reasoningFallback,
     ttftMs: firstTokenAt === null ? null : Math.round(firstTokenAt - startedAt),
     inputTokens,
     outputTokens,

@@ -15,6 +15,7 @@ export type ParameterState = {
   topP: string;
   repeatPenalty: string;
   numPredict: string;
+  reasoningEffort?: "off" | "on" | "default";
 };
 
 interface RunWizardProps {
@@ -100,6 +101,7 @@ export function RunWizard({
     topP: "0.9",
     repeatPenalty: "1.1",
     numPredict: "4096",
+    reasoningEffort: "off",
   });
 
   // Handle Scenario Selection with full state population
@@ -628,6 +630,24 @@ export function RunWizard({
                   value={parameters.repeatPenalty}
                   onChange={(e) => setParameters({ ...parameters, repeatPenalty: e.target.value })}
                 />
+              </div>
+
+              <div className="param-field">
+                <label>Reasoning Mode (CoT):</label>
+                <select
+                  className="styled-select"
+                  value={parameters.reasoningEffort ?? "off"}
+                  onChange={(e) =>
+                    setParameters({
+                      ...parameters,
+                      reasoningEffort: e.target.value as "off" | "on" | "default",
+                    })
+                  }
+                >
+                  <option value="off">Off (Standard benchmark - recommended)</option>
+                  <option value="on">On (Enforce reasoning effort)</option>
+                  <option value="default">Provider Default</option>
+                </select>
               </div>
             </div>
           )}

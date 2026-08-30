@@ -29,12 +29,16 @@ export const securityAttackTypeSchema = z.enum([
 export type TestCategory = z.infer<typeof testCategorySchema>;
 export type SecurityAttackType = z.infer<typeof securityAttackTypeSchema>;
 
+export const reasoningEffortSchema = z.enum(["off", "on", "default"]);
+export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
+
 export const benchmarkParametersSchema = z.object({
   temperature: z.number().min(0).max(2),
   numCtx: z.number().int().min(128).max(131_072),
   topP: z.number().min(0).max(1),
   repeatPenalty: z.number().min(0).max(3),
   numPredict: z.number().int().min(1).max(32_768),
+  reasoningEffort: reasoningEffortSchema.default("off").optional(),
 });
 
 export const evaluatorConfigSchema = z.object({
