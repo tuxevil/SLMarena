@@ -225,6 +225,11 @@ export async function streamOpenAICompatibleChat({
     }
   }
 
+  // Fallback: If content is empty but model emitted reasoning_content (e.g. Qwen3.6/DeepSeek reasoning models without explicit answer tokens), use thinking as response
+  if (!responseText.trim() && thinking.trim()) {
+    responseText = thinking.trim();
+  }
+
   const finishedAt = performance.now();
   const totalDurationMs = Math.round(finishedAt - startedAt);
   const evalDurationMs =
