@@ -121,8 +121,9 @@ export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
             })
             .join(" ");
 
+          const modelKey = m.modelName + (m.reasoningEffort ? `::${m.reasoningEffort}` : "");
           return (
-            <g key={m.modelName}>
+            <g key={modelKey}>
               <polygon
                 points={points}
                 fill={color}
@@ -145,15 +146,16 @@ export function SecurityRadarChart({ models }: SecurityRadarChartProps) {
         {displayModels.map((m, idx) => {
           const color = colors[idx % colors.length];
           const hovered = isHovered(m.modelName);
+          const modelKey = m.modelName + (m.reasoningEffort ? `::${m.reasoningEffort}` : "");
           return (
             <div
-              key={m.modelName}
+              key={modelKey}
               className={`legend-item${hovered ? " legend-item-hovered" : ""}`}
               onMouseEnter={() => setHoveredModel(m.modelName)}
               onMouseLeave={() => setHoveredModel(null)}
             >
               <span className="legend-dot" style={{ backgroundColor: color }} />
-              <span>{m.modelName}</span>
+              <span>{m.modelName}{m.reasoningEffort && m.reasoningEffort !== "off" ? ` (CoT: ${m.reasoningEffort})` : ""}</span>
             </div>
           );
         })}

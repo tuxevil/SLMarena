@@ -35,7 +35,11 @@ export default function SuitesPage() {
   }, []);
 
   const currentEndpoint =
-    activeProvider === "freetoken" ? freetokenUrl : activeProvider === "llamacpp" ? llamacppUrl : ollamaUrl;
+    activeProvider === "freetoken"
+      ? freetokenUrl
+      : activeProvider === "llamacpp"
+        ? llamacppUrl
+        : ollamaUrl;
 
   const handleLaunchRun = async (params: {
     category: TestCategory;
