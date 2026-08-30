@@ -76,6 +76,7 @@ export async function streamOpenAICompatibleChat({
   apiKey,
   signal,
   onToken,
+  provider = "freetoken",
   providerName = "Local Provider",
 }: {
   endpoint: string;
@@ -85,6 +86,7 @@ export async function streamOpenAICompatibleChat({
   apiKey?: string | null;
   signal: AbortSignal;
   onToken?: (token: string) => void;
+  provider?: "freetoken" | "llamacpp" | string;
   providerName?: string;
 }): Promise<OpenAIChatResult> {
   const startedAt = performance.now();
@@ -111,7 +113,11 @@ export async function streamOpenAICompatibleChat({
 
   const reasoningEffort = parameters.reasoningEffort ?? "off";
   if (reasoningEffort !== "default") {
-    body.reasoning_effort = reasoningEffort;
+    if (provider === "llamacpp" && reasoningEffort === "off") {
+      body.reasoning_effort = "none";
+    } else {
+      body.reasoning_effort = reasoningEffort;
+    }
   }
 
   if (parameters.repeatPenalty > 1) {

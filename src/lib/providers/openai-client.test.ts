@@ -157,7 +157,7 @@ describe("streamOpenAICompatibleChat", () => {
     expect(result.evalDurationMs).toBe(500);
   });
 
-  it("sends reasoning_effort: 'off' when reasoningEffort is 'off'", async () => {
+  it("sends reasoning_effort: 'off' for FreeToken when reasoningEffort is 'off'", async () => {
     let capturedBody: Record<string, unknown> | null = null;
     vi.stubGlobal(
       "fetch",
@@ -172,6 +172,7 @@ describe("streamOpenAICompatibleChat", () => {
     await streamOpenAICompatibleChat({
       endpoint: "http://localhost:8000/v1",
       model: "qwen",
+      provider: "freetoken",
       messages: [{ role: "user", content: "hi" }],
       parameters: {
         temperature: 0.2,
@@ -186,6 +187,38 @@ describe("streamOpenAICompatibleChat", () => {
 
     expect(capturedBody).not.toBeNull();
     expect(capturedBody!.reasoning_effort).toBe("off");
+  });
+
+  it("sends reasoning_effort: 'none' for llama.cpp when reasoningEffort is 'off'", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url, init) => {
+        capturedBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { status: 200 }),
+        );
+      }),
+    );
+
+    await streamOpenAICompatibleChat({
+      endpoint: "http://localhost:8080",
+      model: "qwen",
+      provider: "llamacpp",
+      messages: [{ role: "user", content: "hi" }],
+      parameters: {
+        temperature: 0.2,
+        numCtx: 8192,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        numPredict: 512,
+        reasoningEffort: "off",
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody!.reasoning_effort).toBe("none");
   });
 
   it("omits reasoning_effort when reasoningEffort is 'default'", async () => {

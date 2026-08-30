@@ -168,6 +168,7 @@ async function executeModel(runId: string, resultId: string) {
                 ],
                 parameters: activeRun.parameters,
                 apiKey,
+                provider: provider === "llamacpp" ? "llamacpp" : "freetoken",
                 providerName: provider === "freetoken" ? "FreeToken" : "llama.cpp",
                 signal: activeRun.cancelController.signal,
                 onToken: (token) => {
