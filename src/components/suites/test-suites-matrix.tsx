@@ -729,6 +729,26 @@ export function TestSuitesMatrix({
                   onChange={(e) => setSamplesPerModel(Number(e.target.value))}
                 />
               </div>
+
+              <div className="p-item">
+                <label>Reasoning Mode (CoT)</label>
+                <select
+                  value={parameters.reasoningEffort ?? "off"}
+                  onChange={(e) =>
+                    setParameters({
+                      ...parameters,
+                      reasoningEffort: e.target.value as "off" | "default" | "low" | "medium" | "high" | "max",
+                    })
+                  }
+                >
+                  <option value="off">Off (Standard benchmark)</option>
+                  <option value="default">Provider Default</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="max">Max</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
